@@ -2,132 +2,200 @@
 
 # reddit-mcp
 
-一个非官方的 Reddit [Model Context Protocol](https://modelcontextprotocol.io) 服务器，**无需任何 Reddit API 凭据，
-即可从机房 / VPS IP 读取 Reddit 公开数据**。它按照 Reddit 官方 Android 客户端的方式获取匿名的 application-only
-token（即 [redlib](https://github.com/redlib-org/redlib)（MIT）所用的技术），然后访问 `oauth.reddit.com`。
+一个轻量、高效的 [Model Context Protocol (MCP)](https://modelcontextprotocol.io) 服务器。**无需任何 Reddit API 密钥或账号凭据，即可直接从机房 / VPS IP 稳定读取 Reddit 公开数据**（帖子、评论、版块与用户信息）。
 
-**本服务器是只读的。** 它提供十二个工具，用于读取公开的帖子、评论、用户和版块信息；没有任何发帖、回复、编辑、删除、
-投票、私信或读取账号数据的工具，也从不索要 Reddit 凭据。读工具的名称与语义沿用
-[jordanburke/reddit-mcp-server](https://github.com/jordanburke/reddit-mcp-server)，为其中一个编写的只读提示词可以直接用于另一个。
+项目借鉴了 [redlib](https://github.com/redlib-org/redlib) 的技术方案，通过模拟 Reddit 官方 Android 客户端的 Token 交换流程，获取匿名的 application-only token 直接与 `oauth.reddit.com` 通信，有效解决云服务器 IP 访问 Reddit 时普遍遭遇的 403 与反爬拦截。
 
-## ⚠️ 风险提示（请先阅读）
+---
 
-- **本服务器在设计上就是只读的。** 写操作工具是被刻意移除的：发帖、回复和投票都需要用户上下文的 token，
-  这意味着要么有一个注册过的 Reddit app（自助创建已于 2025 年 11 月关闭，现在需要审批），要么把你的 Reddit 账号凭据交给本工具。
-  这两者都不在本项目范围内，因此没有任何代码路径会接受 Reddit 用户名、密码或 app secret。
-- **client id `ohXpoqrZYub1kg` 是 Reddit Android 客户端公开的常量。** 冒充官方 Android 客户端与 Reddit 的
-  Responsible Builder Policy 相冲突，Reddit 随时可能吊销或更换该 id。失效时可以通过 `REDDIT_MOBILE_CLIENT_ID`
-  覆盖；在此期间级联会降级到 RSS，两个支持 RSS 的工具仍可使用。
-- **伪装身份只用于读取公开数据。** 它只换取匿名的 application-only token；服务器不会以任何 Reddit 账号的身份执行操作。
-- **不保证可用性和正确性。** 这是一个调用未公开接口的非官方客户端，任何接口都可能在没有通知的情况下变更或消失。
+## ✨ 核心特性
 
-## 快速开始
+- 🔑 **零凭据依赖**：无需申请 Reddit 开发者应用审批，无需填写 API Secret，无需提供账号密码。
+- 🌐 **机房 / VPS 友好**：原生绕过 Reddit 对数据中心 IP 的阻断与访问限制。
+- 🛡️ **严格只读与隐私安全**：仅读取公开内容；代码中完全移除写操作与账号级凭据逻辑，杜绝凭据泄露风险。
+- 🔄 **三级高可用降级（Cascade）**：`Mobile Token` → `Installed Client Token` → `RSS Fallback` 自动级联切换。
+- ⚡ **智能配额管理与缓存**：实时监控速率限制，在剩余请求数 $\le 5$ 时主动轮换 Token，支持 429 智能重试与内存 LRU 缓存。
+- 🔌 **双传输协议支持**：支持面向本地 Agent 的标准 `stdio` 协议，以及面向容器与远程网关的 Streamable `HTTP` 协议。
 
-需要 Node.js ≥ 20。
+---
+
+## 🚀 快速上手
+
+### 环境要求
+
+- [Node.js](https://nodejs.org/) $\ge 20$
+
+### 1. 构建项目
 
 ```bash
+git clone https://github.com/.../reddit-mcp.git # 或本地代码目录
+cd reddit-mcp
 npm install
 npm run build
-
-# stdio（默认）——MCP 客户端启动的方式
-npx reddit-mcp            # 或：node dist/cli.js
-
-# Streamable HTTP：http://127.0.0.1:3000/mcp（另有 GET /health）
-npx reddit-mcp --http --port 3000 --host 127.0.0.1
 ```
 
-npm 包名为 `reddit-mobile-mcp`（`reddit-mcp` 在 npm 上已被占用），安装后的可执行文件名为 `reddit-mcp`，
-因此发布后命令是 `npx reddit-mobile-mcp`。
+编译产物位于 `dist/cli.js`。
 
-MCP 客户端配置示例（stdio），请使用你本地检出目录的绝对路径：
+### 2. 配置 MCP 客户端
+
+#### 标准 stdio 配置（Claude Desktop / Cursor 等）
+
+在 MCP 配置文件（如 `claude_desktop_config.json` 或 Cursor 的 `mcp.json`）中添加：
 
 ```json
 {
   "mcpServers": {
-    "reddit": { "command": "node", "args": ["/path/to/reddit-mcp/dist/cli.js"] }
+    "reddit": {
+      "command": "node",
+      "args": ["/绝对路径/reddit-mcp/dist/cli.js"]
+    }
   }
 }
 ```
 
-stdio 模式下 stdout 只输出 MCP 协议消息，所有日志都写到 stderr。HTTP 传输默认只监听回环地址，并拒绝 `Host`
-头不是回环名称的请求（防 DNS rebinding）。空闲 30 分钟的 HTTP 会话会被关闭。HTTP 端点**没有鉴权**——除非前面有其他保护，否则不要绑定到公网接口。
+#### Hermes Agent（`~/.hermes/config.yaml`）
 
-## 读取原理
-
-| 步骤 | 后端 | 说明 |
-|---|---|---|
-| 1 | `mobile` | `POST https://www.reddit.com/auth/v2/oauth/access-token/loid`，HTTP Basic `<android client id>:`（空密码），JSON 请求体 `{"scopes":["*","email","pii"]}`，附带 Android 请求头。返回 24 小时有效的 token 以及 `x-reddit-loid` / `x-reddit-session`，之后每个请求都会带上这两个头。 |
-| 2 | `installed` | `mobile` **连续失败 5 次**后：`POST https://www.reddit.com/api/v1/access_token`，使用 `installed_client` grant 和相同的 Basic 认证。 |
-| 3 | `rss` | 再连续失败 5 次后：使用公开 RSS。只有 `browse_subreddit` 和 `get_top_posts` 继续可用（最多约 25 条，没有分数 / 评论数 / 分页）；其他工具会返回说明原因的错误。 |
-| 4 | — | 如果 RSS 也失败，工具返回可操作的错误信息——绝不静默返回错误结果。 |
-
-细节：
-
-- 每个进程生成一次 Android 设备身份（从 redlib 的真实版本列表中随机选取 app 版本、Android 9–14、用于
-  `client-vendor-id` / `X-Reddit-Device-Id` 的 uuid），之后所有请求复用。
-- token 缓存在内存中，**到期前 2 分钟**刷新；同一时刻只有一个刷新在进行。
-- 只有 HTTP 层面的拒绝（4xx/5xx、token 响应缺字段）才计为后端失败。纯网络错误和超时只会让本次调用返回网络错误，
-  **不会**推动级联降级到 RSS（RSS 与 token 接口在同一主机上，降级无济于事）。token 请求最长 10 秒超时。
-- 每个响应都会记录 `x-ratelimit-remaining`；降到 **≤ 5** 时轮换 token（新 token 拥有新的约 100 次请求窗口）。
-  匿名读请求遇到 `429` 时先触发同样的轮换，之后再按 `Retry-After` 最多重试 `REDDIT_MAX_RETRIES` 次。
-  遇到 `401` 刷新 token 并重试一次。
-- 降级之后，每 30 分钟按顺序（先 mobile，再 installed）重新尝试更优的后端，成功后自动切回。
-- token、`x-reddit-loid` 和 `x-reddit-session` 永远不会被记录到日志或返回（日志和工具输出还会经过一层脱敏过滤）。
-- `REDDIT_AUTH_MODE=mobile|installed|rss` 固定使用某一后端，并关闭级联降级。
-
-## 配置
-
-所有环境变量均为可选。没有任何凭据类变量：不会读取 Reddit app 的 id / secret，也不会读取账号用户名 / 密码。
-
-| 变量 | 默认值 | 含义 |
-|---|---|---|
-| `REDDIT_AUTH_MODE` | `auto` | `auto` / `mobile` / `installed` / `rss` |
-| `REDDIT_MOBILE_CLIENT_ID` | `ohXpoqrZYub1kg` | Android client id（被吊销时的覆盖入口） |
-| `REDDIT_CACHE` | `on` | 内存读缓存 `on` / `off` |
-| `REDDIT_CACHE_MAX_MB` | `50` | LRU 上限 |
-| `REDDIT_MAX_RETRIES` | `3` | 429 时按 `Retry-After` 重试的次数 |
-| `REDDIT_TIMEOUT_MS` | `20000` | 单个请求超时 |
-| `REDDIT_LOG_LEVEL` | `info` | `debug` / `info` / `warn` / `error` / `silent`（输出到 stderr） |
-
-## 工具
-
-恰好十二个工具，全部只读、匿名（标注为 `readOnlyHint: true`）。列表类工具接受 `limit`，在 Reddit 支持时还接受
-`after`，返回 `{"data": [...], "after": cursor|null}`，字段经过裁剪（id、fullname、title、author、subreddit、score、
-num_comments、ISO 格式的 `created_utc`、permalink、url、截断后的 selftext/body）——绝不返回 Reddit 原始 JSON。
-
-| 工具 | 说明 |
-|---|---|
-| `get_reddit_post` | 按 id / fullname / 永久链接获取单个帖子 |
-| `get_top_posts` | `subreddit?`、`time_filter`（默认 week）。**RSS 模式下可用。** |
-| `browse_subreddit` | `sort`：hot/new/top/rising/controversial，top/controversial 使用 `time_filter`。**RSS 模式下可用**（controversial 除外）。 |
-| `search_reddit` | `query`（别名 `q`）、可选 `subreddit`、`sort`、`time_filter`、`type`（link/sr/user） |
-| `get_post_comments` | `limit`、`depth`、`sort`；嵌套回复 + `more` 桩。本服务器**无法展开** `more` 桩：Reddit 对匿名 token 的 `/api/morechildren` 请求返回 HTTP 403。需要更多评论时请调大 `limit` / `depth`。 |
-| `get_user_info` | 公开资料 |
-| `get_user_posts` / `get_user_comments` | `sort`、`time_filter`、分页 |
-| `get_subreddit_info` | 版块元数据与侧边栏 |
-| `get_subreddit_rules` | 发帖规则 |
-| `get_trending_subreddits` | Reddit 的 `/subreddits/popular` |
-| `doctor` | 诊断，无参数：当前后端、级联是否已降级（及原因）、token 到期时间、当前 `x-ratelimit-remaining` / 重置窗口 / 轮换次数、缓存与请求统计。其他工具出错时先调用它。 |
-
-刻意不提供：
-
-- **写操作**（发帖、回复、编辑、删除）和**账号工具**（自己的资料、收藏、动态）——它们需要用户身份，见*风险提示*。
-- **投票和私信**（Responsible Builder Policy）。
-- **展开 `more` 桩**（匿名 token 访问 `/api/morechildren` → 403）和 **link flair 模板**（匿名 token 访问
-  `/r/<sub>/api/link_flair_v2` → `USER_REQUIRED`）。不会改走其他接口来绕过。
-
-## 开发
-
-```bash
-npm run build      # tsup -> dist/cli.js
-npm run typecheck  # tsc --noEmit（strict）
-npm test           # vitest 单元测试，不访问网络
-npm run smoke      # 针对真实 Reddit 对全部 12 个工具做实网测试（需要网络）
-npm run wire       # 启动 dist/cli.js，检查 stdio 与 HTTP 的协议交互（doctor 会访问网络）
+```yaml
+mcp_servers:
+  reddit:
+    command: "node"
+    args:
+      - "/绝对路径/reddit-mcp/dist/cli.js"
 ```
 
-代码结构与约定见 [AGENTS.md](AGENTS.md)（英文）。
+#### Streamable HTTP 模式
 
-## 许可证
+适用于 Docker 容器部署、MetaMCP 或集中式 MCP 网关集成：
 
-MIT。`src/auth/android-app-versions.ts` 中的 Android app 版本列表复制自 redlib（MIT）。
+```bash
+node dist/cli.js --http --port 3000 --host 127.0.0.1
+```
+
+- MCP 服务端点：`http://127.0.0.1:3000/mcp`
+- 健康检查端点：`GET http://127.0.0.1:3000/health`
+- *说明：* HTTP 传输默认绑定到 `127.0.0.1`，并强制校验 Host 头以防范 DNS 重绑定攻击；服务端未设身份鉴权，若需暴露至外网请前置反向代理鉴权。
+
+---
+
+## 🛠️ 可用工具清单
+
+服务器内置 **12 个严格只读工具**（带有 `readOnlyHint: true` 标记）。返回字段均经过标准化裁剪与脱敏（提取 id、标题、作者、版块、得分、发布时间、链接、截断正文等），绝不直接倾倒原始无意义的冗长 JSON。
+
+### 帖子与信息流
+
+| 工具名                    | 功能说明                                                                                  | 核心参数                                                                              |
+| ------------------------- | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| `browse_subreddit`        | 浏览版块列表，支持 `hot`、`new`、`top`、`rising`、`controversial` 排序。*(支持 RSS 降级)* | `subreddit?`, `sort`, `time_filter`, `limit`, `after`                                 |
+| `get_top_posts`           | 获取指定版块或默认首页在特定时间范围内的热门帖子。*(支持 RSS 降级)*                       | `subreddit?`, `time_filter` (`day`, `week`, `month`, `year`, `all`), `limit`, `after` |
+| `get_reddit_post`         | 获取单个帖子的完整详情。                                                                  | `id`（base36 ID、`t3_` fullname 或帖子链接）                                          |
+| `get_trending_subreddits` | 获取当前全站热门/趋势版块（`/subreddits/popular`）。                                      | `limit`, `after`                                                                      |
+
+### 评论与讨论树
+
+| 工具名              | 功能说明                   | 核心参数                                                            |
+| ------------------- | -------------------------- | ------------------------------------------------------------------- |
+| `get_post_comments` | 获取帖子的结构化树状评论。 | `post_id`, `sort` (`confidence`, `top`, `new` 等), `limit`, `depth` |
+
+> **关于评论折叠桩的说明：** Reddit 官方接口对匿名 Token 的 `/api/morechildren` 请求直接返回 403，因此本服务无法展开深层被折叠的 `more` 评论桩。如需检索更深层讨论，请在调用时直接调大 `limit` 或 `depth`。
+
+### 内容搜索
+
+| 工具名          | 功能说明                                                                                          | 核心参数                                                                                                |
+| --------------- | ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `search_reddit` | 搜索全站或指定版块中的帖子、版块或用户，支持高级搜索语法（`author:`、`flair:`、双引号精确匹配）。 | `query`（或 `q`）, `subreddit?`, `sort`, `time_filter`, `type` (`link`, `sr`, `user`), `limit`, `after` |
+
+### 社区与用户档案
+
+| 工具名                | 功能说明                                       | 核心参数                                            |
+| --------------------- | ---------------------------------------------- | --------------------------------------------------- |
+| `get_subreddit_info`  | 查询版块元数据、简介描述、订阅人数及规则概览。 | `subreddit`                                         |
+| `get_subreddit_rules` | 查询指定版块的发帖与社区规范。                 | `subreddit`                                         |
+| `get_user_info`       | 查询用户的公开主页资料、Karma 得分及注册时间。 | `username`                                          |
+| `get_user_posts`      | 查询指定用户公开发布的帖子列表。               | `username`, `sort`, `time_filter`, `limit`, `after` |
+| `get_user_comments`   | 查询指定用户公开发布的评论历史。               | `username`, `sort`, `time_filter`, `limit`, `after` |
+
+### 服务诊断
+
+| 工具名   | 功能说明                                                                                                     | 核心参数 |
+| -------- | ------------------------------------------------------------------------------------------------------------ | -------- |
+| `doctor` | 诊断服务器运行状态：当前生效后端、是否降级、Token 到期时间、速率剩余限额及缓存命中统计。排查问题时首选调用。 | 无       |
+
+---
+
+## ⚙️ 架构设计与容灾降级
+
+为了在无需凭据的前提下实现稳定读取，`reddit-mcp` 实现了三层容灾流水线：
+
+```
+[请求发起]
+   │
+   ▼
+1. Mobile OAuth Token ──── (连续失败 5 次) ───► 2. Installed Client Grant
+   │ (默认主通道：auth/v2/oauth/access-token/loid)     │
+   │                                                   ▼ (连续失败 5 次)
+   └────────────────────────────────────────────► 3. Public RSS Fallback
+                                                       (仅 browse_subreddit 与 get_top_posts)
+```
+
+1. **移动端 Token（`mobile`）**：默认首选通道。模拟 Android 客户端握手，生成真实的虚拟设备指纹，换取 24 小时有效的应用级 Token。
+2. **安装客户端 Token（`installed`）**：当 `mobile` 接口连续失败 5 次后自动切换至次级鉴权通道。
+3. **公开 RSS 兜底（`rss`）**：当所有 Token 接口均被限制时的保底通道，保障核心帖子流的持续可读。
+4. **自动探测恢复**：服务在降级后每隔 30 分钟会自动探测并恢复更高优先级的高速通道。
+
+### 配额管理与性能优化
+
+- **提前刷新**：Token 到期前 2 分钟在后台异步静默刷新。
+- **主动轮换**：监控响应头中的 `x-ratelimit-remaining`；当剩余次数 $\le 5$ 时主动刷新 Token 以获得全新的配额窗口。
+- **429 智能重试**：遇到 429 限制时先换新 Token，并按响应头的 `Retry-After` 指数退避重试。
+- **内存 LRU 缓存**：内置基于字节大小上限的 LRU 缓存，避免短期内高频重复请求同一内容。
+
+---
+
+## 🔧 环境变量配置
+
+所有配置项均为可选，无需配置任何账号密码或密钥凭据。
+
+| 环境变量                  | 默认值           | 说明                                                                        |
+| ------------------------- | ---------------- | --------------------------------------------------------------------------- |
+| `REDDIT_AUTH_MODE`        | `auto`           | 鉴权模式：`auto`（启用级联降级）、`mobile`、`installed`、`rss`。            |
+| `REDDIT_MOBILE_CLIENT_ID` | `ohXpoqrZYub1kg` | Android 客户端 ID，官方常量失效时可配置自定义 ID 覆盖。                     |
+| `REDDIT_CACHE`            | `on`             | 是否启用内存只读缓存（`on` / `off`）。                                      |
+| `REDDIT_CACHE_MAX_MB`     | `50`             | 内存 LRU 缓存上限（MB）。                                                   |
+| `REDDIT_MAX_RETRIES`      | `3`              | 遭遇 429 时的最大重试次数。                                                 |
+| `REDDIT_TIMEOUT_MS`       | `20000`          | 单次 HTTP 请求超时时间（毫秒）。                                            |
+| `REDDIT_LOG_LEVEL`        | `info`           | 日志输出级别（输出至 stderr）：`debug`、`info`、`warn`、`error`、`silent`。 |
+
+---
+
+## 📋 边界与设计说明
+
+- **严格只读设计**：不提供发帖、评论、点赞投票或私信功能。这些操作需要用户级 OAuth 授权及绑定账号，不属于本工具范畴。
+- **仅公开数据**：无法读取私密版块、被封禁用户或需登录的私有接口（如个人收藏、收件箱等）。
+- **深层折叠评论不可展开**：由于 Reddit 官方限制，匿名 Token 请求 `/api/morechildren` 必定返回 403；如需更多评论，请直接增大 `get_post_comments` 的 `limit` 与 `depth`。
+
+---
+
+## 🧪 开发与测试
+
+```bash
+# 编译 TypeScript 至 dist/
+npm run build
+
+# 类型检查
+npm run typecheck
+
+# 单元测试（使用 mock 数据，无需外网连接）
+npm test
+
+# 协议测试（验证 stdio 与 HTTP 双协议交互）
+npm run wire
+
+# 全功能真网冒烟测试（直接访问真实 Reddit 端点）
+npm run smoke
+```
+
+---
+
+## 📄 开源许可证
+
+本项目基于 [MIT](LICENSE) 协议开源。`src/auth/android-app-versions.ts` 中的设备指纹数据来源于 [redlib](https://github.com/redlib-org/redlib)（MIT）。

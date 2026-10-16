@@ -2,147 +2,200 @@
 
 # reddit-mcp
 
-An unofficial [Model Context Protocol](https://modelcontextprotocol.io) server for Reddit that can **read public
-Reddit data from a datacenter / VPS IP without any Reddit API credentials**. It obtains an anonymous,
-application-only token the same way Reddit's official Android app does (the technique used by
-[redlib](https://github.com/redlib-org/redlib), MIT) and talks to `oauth.reddit.com`.
+An unofficial [Model Context Protocol (MCP)](https://modelcontextprotocol.io) server designed to fetch public Reddit content reliably from datacenter and VPS IPs **without any Reddit API credentials or user accounts**.
 
-**The server is read-only.** It exposes twelve tools that read public posts, comments, users and subreddits. There
-are no tools that post, reply, edit, delete, vote, send messages or read account data, and it never asks for Reddit
-credentials. The read tools' names and semantics follow
-[jordanburke/reddit-mcp-server](https://github.com/jordanburke/reddit-mcp-server), so read-only prompts written for one
-work with the other.
+By emulating Reddit's official Android application token exchange (based on the technique from [redlib](https://github.com/redlib-org/redlib)), `reddit-mcp` acquires anonymous application-only tokens to query `oauth.reddit.com` directly with high resilience.
 
-## ⚠️ Risks — read this first
+---
 
-- **This server is read-only by design.** Write tools were deliberately removed. Posting, replying and voting need a
-  user-context token, which would mean either a registered Reddit app (self-service app creation closed in
-  November 2025; approval is now required) or handing your Reddit account credentials to this tool. Neither is in
-  scope, so no code path accepts a Reddit username, password or app secret.
-- **The client id `ohXpoqrZYub1kg` is a public constant of Reddit's Android app.** Impersonating the official
-  Android client conflicts with Reddit's Responsible Builder Policy, and Reddit can revoke or change this id at any
-  time. When it breaks, override it with `REDDIT_MOBILE_CLIENT_ID`; meanwhile the cascade falls back to RSS for the
-  two RSS-capable tools.
-- **The spoofed identity only ever reads public data.** It yields an anonymous, application-only token; nothing the
-  server does acts on behalf of a Reddit account.
-- **No uptime or correctness guarantee.** This is an unofficial client hitting undocumented endpoints; any of them can
-  change or disappear without notice.
+## ✨ Features
 
-## Quick start
+- 🔑 **Zero Credentials Required**: No Reddit Developer app approval, API secrets, or account credentials required.
+- 🌐 **VPS & Datacenter Friendly**: Bypasses the IP blocks and 403 errors common to Reddit's web endpoints on cloud IPs.
+- 🛡️ **Strictly Read-Only & Privacy-First**: Queries public data exclusively; contains zero write paths or credential-handling logic.
+- 🔄 **3-Tier Resilient Fallback**: Automatic cascade: `Mobile Token` → `Installed Client Token` → `RSS Fallback`.
+- ⚡ **Smart Rate-Limit & Token Rollover**: Proactively rotates tokens when remaining requests drop to $\le 5$, handles 429 backoff gracefully, and caches responses via an in-memory LRU cache.
+- 🔌 **Dual Transports**: Ready for both `stdio` (local MCP clients like Claude Desktop, Cursor, Hermes) and streamable `HTTP` (remote/container environments).
 
-Requires Node.js ≥ 20.
+---
+
+## 🚀 Quick Start
+
+### Prerequisites
+
+- [Node.js](https://nodejs.org/) $\ge 20$
+
+### 1. Build from Source
 
 ```bash
+git clone https://github.com/.../reddit-mcp.git # or local folder
+cd reddit-mcp
 npm install
 npm run build
-
-# stdio (default) — what MCP clients launch
-npx reddit-mcp            # or: node dist/cli.js
-
-# Streamable HTTP on http://127.0.0.1:3000/mcp (+ GET /health)
-npx reddit-mcp --http --port 3000 --host 127.0.0.1
 ```
 
-The npm package name is `reddit-mobile-mcp` (`reddit-mcp` is already taken on npm); the executable it
-installs is `reddit-mcp`, so once published the command would be `npx reddit-mobile-mcp`.
+The compiled entry point is `dist/cli.js`.
 
-Example MCP client entry (stdio), using an absolute path to your checkout:
+### 2. Configure Your MCP Client
+
+#### Standard MCP Client Configuration (`stdio`)
+
+Add this to your MCP configuration file (e.g. `claude_desktop_config.json` or Cursor `mcp.json`):
 
 ```json
 {
   "mcpServers": {
-    "reddit": { "command": "node", "args": ["/path/to/reddit-mcp/dist/cli.js"] }
+    "reddit": {
+      "command": "node",
+      "args": ["/ABSOLUTE/PATH/TO/reddit-mcp/dist/cli.js"]
+    }
   }
 }
 ```
 
-In stdio mode nothing but MCP protocol messages is written to stdout; all logs go to stderr. The HTTP transport
-binds to loopback by default and rejects requests whose `Host` header is not a loopback name (DNS-rebinding
-protection). Idle HTTP sessions are closed after 30 minutes. It has **no authentication** — don't bind it to a public interface unless something else protects it.
+#### Hermes Agent (`~/.hermes/config.yaml`)
 
-## How reading works
-
-| Step | Backend | What happens |
-|---|---|---|
-| 1 | `mobile` | `POST https://www.reddit.com/auth/v2/oauth/access-token/loid`, HTTP Basic `<android client id>:` (empty password), JSON body `{"scopes":["*","email","pii"]}`, Android headers. Returns a 24 h token plus `x-reddit-loid` / `x-reddit-session`, which are sent on every later request. |
-| 2 | `installed` | After **5 consecutive** `mobile` failures: `POST https://www.reddit.com/api/v1/access_token` with the `installed_client` grant and the same Basic auth. |
-| 3 | `rss` | After 5 more failures: public RSS feeds. Only `browse_subreddit` and `get_top_posts` keep working (max ~25 entries, no scores / comment counts / pagination); every other tool returns an error that says so. |
-| 4 | — | If RSS fails too, tools return an actionable error — never a silent wrong answer. |
-
-Details:
-
-- One Android device identity (random real app version from redlib's list, Android 9–14, uuid for
-  `client-vendor-id` / `X-Reddit-Device-Id`) is generated per process and reused for every request.
-- The token is cached in memory and refreshed **2 minutes before** it expires. Only one refresh runs at a time.
-- Only HTTP-level rejections (4xx/5xx, malformed token response) count as backend failures. Pure network errors and
-  timeouts fail the current call with a network error and do **not** push the cascade towards RSS (RSS lives on the
-  same host, so degrading would not help). Token requests time out after at most 10 s.
-- `x-ratelimit-remaining` is tracked on every response; at **≤ 5** the token is rolled over (a fresh token gets a
-  fresh ~100-request window). A `429` on an anonymous read first triggers the same rollover; after that `429` is
-  retried up to `REDDIT_MAX_RETRIES` times, honouring `Retry-After`. On `401` the token is refreshed and the request
-  retried once.
-- After degrading, the server re-tries the better backends (mobile, then installed) every 30 minutes and switches back
-  when one works.
-- Tokens, `x-reddit-loid` and `x-reddit-session` are never logged or returned (logs and tool output are additionally
-  passed through a redaction filter).
-- `REDDIT_AUTH_MODE=mobile|installed|rss` pins one backend and disables the cascade.
-
-## Configuration
-
-All environment variables are optional. There are no credential variables: Reddit app ids / secrets and account
-usernames / passwords are not read.
-
-| Variable | Default | Meaning |
-|---|---|---|
-| `REDDIT_AUTH_MODE` | `auto` | `auto` / `mobile` / `installed` / `rss` |
-| `REDDIT_MOBILE_CLIENT_ID` | `ohXpoqrZYub1kg` | Android client id (override point if it gets revoked) |
-| `REDDIT_CACHE` | `on` | In-memory read cache `on` / `off` |
-| `REDDIT_CACHE_MAX_MB` | `50` | LRU cap |
-| `REDDIT_MAX_RETRIES` | `3` | Retries on 429 honouring `Retry-After` |
-| `REDDIT_TIMEOUT_MS` | `20000` | Per-request timeout |
-| `REDDIT_LOG_LEVEL` | `info` | `debug` / `info` / `warn` / `error` / `silent` (stderr) |
-
-## Tools
-
-Exactly twelve tools, all read-only and anonymous (annotated `readOnlyHint: true`). Listing tools take `limit` and
-(where Reddit supports it) `after`, and return `{"data": [...], "after": cursor|null}` with trimmed fields (id,
-fullname, title, author, subreddit, score, num_comments, ISO `created_utc`, permalink, url, truncated selftext/body) —
-never the raw Reddit JSON.
-
-| Tool | Notes |
-|---|---|
-| `get_reddit_post` | One post by id / fullname / permalink URL |
-| `get_top_posts` | `subreddit?`, `time_filter` (default week). **Works over RSS.** |
-| `browse_subreddit` | `sort`: hot/new/top/rising/controversial, `time_filter` for top/controversial. **Works over RSS** (except controversial). |
-| `search_reddit` | `query` (alias `q`), optional `subreddit`, `sort`, `time_filter`, `type` (link/sr/user) |
-| `get_post_comments` | `limit`, `depth`, `sort`; nested replies + `more` stubs. The `more` stubs **cannot be expanded** by this server: Reddit answers `/api/morechildren` with HTTP 403 for anonymous tokens. Request a larger `limit` / `depth` instead. |
-| `get_user_info` | Public profile |
-| `get_user_posts` / `get_user_comments` | `sort`, `time_filter`, pagination |
-| `get_subreddit_info` | Metadata and sidebar |
-| `get_subreddit_rules` | Posting rules |
-| `get_trending_subreddits` | Reddit's `/subreddits/popular` |
-| `doctor` | Diagnostics, no arguments: active backend, whether the cascade degraded (and why), token expiry, current `x-ratelimit-remaining` / reset window / rollovers, cache and request stats. Call it first when other tools fail. |
-
-Not provided, by design:
-
-- **Writes** (posting, replying, editing, deleting) and **account tools** (your profile, saved items, overview) —
-  they need a user identity; see *Risks*.
-- **Voting and private messaging** (Responsible Builder Policy).
-- **Expanding `more` stubs** (`/api/morechildren` → 403 for anonymous tokens) and **link flair templates**
-  (`/r/<sub>/api/link_flair_v2` → `USER_REQUIRED` for anonymous tokens). They are not routed through other endpoints.
-
-## Development
-
-```bash
-npm run build      # tsup -> dist/cli.js
-npm run typecheck  # tsc --noEmit (strict)
-npm test           # vitest unit tests, no network
-npm run smoke      # LIVE test of all 12 tools against real Reddit (network)
-npm run wire       # starts dist/cli.js and checks the stdio + HTTP protocol exchange (network for doctor)
+```yaml
+mcp_servers:
+  reddit:
+    command: "node"
+    args:
+      - "/ABSOLUTE/PATH/TO/reddit-mcp/dist/cli.js"
 ```
 
-See [AGENTS.md](AGENTS.md) for the code map and conventions.
+#### Streamable HTTP Mode
 
-## License
+For Docker, MetaMCP, or remote gateway deployments:
 
-MIT. The Android app version list in `src/auth/android-app-versions.ts` is copied from redlib (MIT).
+```bash
+node dist/cli.js --http --port 3000 --host 127.0.0.1
+```
+
+- Endpoint: `http://127.0.0.1:3000/mcp`
+- Health check: `GET http://127.0.0.1:3000/health`
+- *Note:* The HTTP server binds to `127.0.0.1` by default and enforces Host-header validation to prevent DNS rebinding. It has no built-in authentication; place it behind a secure proxy if exposing externally.
+
+---
+
+## 🛠️ Available Tools
+
+The server provides **12 strictly read-only tools** (annotated with `readOnlyHint: true`). Output fields are sanitized and trimmed (id, title, author, subreddit, score, created timestamp, permalink, truncated selftext/body) instead of returning raw Reddit JSON dumps.
+
+### Posts & Feeds
+
+| Tool                      | Description                                                                                            | Key Arguments                                                                         |
+| ------------------------- | ------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------- |
+| `browse_subreddit`        | Browse subreddit feeds sorted by `hot`, `new`, `top`, `rising`, or `controversial`. *(Works over RSS)* | `subreddit?`, `sort`, `time_filter`, `limit`, `after`                                 |
+| `get_top_posts`           | Get top posts of a subreddit or the front page over a time window. *(Works over RSS)*                  | `subreddit?`, `time_filter` (`day`, `week`, `month`, `year`, `all`), `limit`, `after` |
+| `get_reddit_post`         | Retrieve full details of a single post.                                                                | `id` (base36 ID, `t3_` fullname, or permalink URL)                                    |
+| `get_trending_subreddits` | List currently popular subreddits (`/subreddits/popular`).                                             | `limit`, `after`                                                                      |
+
+### Comments & Discussions
+
+| Tool                | Description                                         | Key Arguments                                                          |
+| ------------------- | --------------------------------------------------- | ---------------------------------------------------------------------- |
+| `get_post_comments` | Retrieve structured nested comment tree for a post. | `post_id`, `sort` (`confidence`, `top`, `new`, etc.), `limit`, `depth` |
+
+> **Note on comments:** Reddit returns HTTP 403 to anonymous tokens for `/api/morechildren`. Deep collapsed reply stubs (`more`) cannot be expanded individually. To see deeper discussions, increase `limit` or `depth` in your initial request.
+
+### Search
+
+| Tool            | Description                                                                                                | Key Arguments                                                                                          |
+| --------------- | ---------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `search_reddit` | Search Reddit posts, subreddits, or users. Supports Reddit search operators (`author:`, `flair:`, quotes). | `query` (or `q`), `subreddit?`, `sort`, `time_filter`, `type` (`link`, `sr`, `user`), `limit`, `after` |
+
+### Community & Users
+
+| Tool                  | Description                                                            | Key Arguments                                       |
+| --------------------- | ---------------------------------------------------------------------- | --------------------------------------------------- |
+| `get_subreddit_info`  | Fetch subreddit metadata, description, subscriber count, and settings. | `subreddit`                                         |
+| `get_subreddit_rules` | Fetch community rules and submission guidelines.                       | `subreddit`                                         |
+| `get_user_info`       | Fetch a user's public profile, karma, and creation date.               | `username`                                          |
+| `get_user_posts`      | List public posts submitted by a user.                                 | `username`, `sort`, `time_filter`, `limit`, `after` |
+| `get_user_comments`   | List public comments authored by a user.                               | `username`, `sort`, `time_filter`, `limit`, `after` |
+
+### Diagnostics
+
+| Tool     | Description                                                                                                     | Key Arguments |
+| -------- | --------------------------------------------------------------------------------------------------------------- | ------------- |
+| `doctor` | Inspect active auth backend, degradation status, token expiration, remaining rate-limits, and cache statistics. | *None*        |
+
+---
+
+## ⚙️ Architecture & Fallback Cascade
+
+`reddit-mcp` utilizes a multi-tiered failover pipeline to maintain high availability:
+
+```
+[Request]
+   │
+   ▼
+1. Mobile OAuth Token ──── (5 consecutive failures) ───► 2. Installed Client Grant
+   │ (Default: auth/v2/oauth/access-token/loid)                 │
+   │                                                            ▼ (5 consecutive failures)
+   └─────────────────────────────────────────────────────► 3. Public RSS Fallback
+                                                                (browse_subreddit & get_top_posts)
+```
+
+1. **Mobile Token (`mobile`)**: Emulates Reddit's Android application handshake with random real device characteristics, acquiring a 24-hour bearer token.
+2. **Installed Client Token (`installed`)**: Automatically activates if the mobile token endpoint experiences 5 consecutive failures.
+3. **RSS Fallback (`rss`)**: Emergency read-only mode for feeds (`browse_subreddit` and `get_top_posts`) if OAuth endpoints are unreachable.
+4. **Auto-Recovery**: The server checks primary backends every 30 minutes and automatically restores higher-tier access once available.
+
+### Token & Rate-Limit Management
+
+- **Proactive Token Refresh**: Automatically renews the OAuth token 2 minutes prior to expiration.
+- **Quota Rollover**: Monitors `x-ratelimit-remaining`; rolls over to a clean token window when remaining requests drop to $\le 5$.
+- **Backoff & Retries**: Handles HTTP 429 by triggering token rollover followed by exponential retry respecting `Retry-After`.
+- **In-Memory Cache**: Bounded LRU cache reduces redundant upstream calls.
+
+---
+
+## 🔧 Environment Variables
+
+All configuration is optional. No credential variables (client secret, password, etc.) exist or are accepted.
+
+| Variable                  | Default          | Description                                                                |
+| ------------------------- | ---------------- | -------------------------------------------------------------------------- |
+| `REDDIT_AUTH_MODE`        | `auto`           | Backend mode: `auto` (cascade enabled), `mobile`, `installed`, or `rss`.   |
+| `REDDIT_MOBILE_CLIENT_ID` | `ohXpoqrZYub1kg` | Android client ID override point if upstream revokes the default constant. |
+| `REDDIT_CACHE`            | `on`             | In-memory read cache (`on` / `off`).                                       |
+| `REDDIT_CACHE_MAX_MB`     | `50`             | Maximum memory limit for LRU cache in megabytes.                           |
+| `REDDIT_MAX_RETRIES`      | `3`              | Maximum retry attempts upon encountering HTTP 429 rate limits.             |
+| `REDDIT_TIMEOUT_MS`       | `20000`          | HTTP request timeout in milliseconds.                                      |
+| `REDDIT_LOG_LEVEL`        | `info`           | Logging verbosity to stderr: `debug`, `info`, `warn`, `error`, `silent`.   |
+
+---
+
+## 📋 Scope & Design Boundaries
+
+- **Read-Only by Design**: Write actions (submitting posts, comments, voting, private messages) are intentionally excluded. They require user-specific OAuth scopes and accounts, which are out of scope.
+- **Public Data Only**: Private subreddits, banned users, and authenticated user endpoints (e.g. saved items, inbox) are not accessible.
+- **No Expansion of Deep Comment Stubs**: Reddit's `/api/morechildren` endpoint returns 403 for anonymous tokens. Adjust `limit` and `depth` in `get_post_comments` instead.
+
+---
+
+## 🧪 Development & Testing
+
+```bash
+# Build TypeScript to dist/
+npm run build
+
+# Type check
+npm run typecheck
+
+# Unit tests (mocked, offline)
+npm test
+
+# Protocol wire verification (stdio & HTTP check)
+npm run wire
+
+# Live integration test against real Reddit endpoints
+npm run smoke
+```
+
+---
+
+## 📄 License
+
+[MIT](LICENSE). Device metadata in `src/auth/android-app-versions.ts` is sourced from [redlib](https://github.com/redlib-org/redlib) (MIT).

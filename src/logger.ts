@@ -18,14 +18,21 @@ export function unregisterSecret(value: string | undefined | null): void {
   if (value) secrets.delete(value);
 }
 
-const AUTH_HEADER_RE = /\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]+/gi;
+// 只匹配像凭据的长串（>= 16 个字符），避免误伤 "Basic setup" 之类的普通文本
+const AUTH_HEADER_RE = /\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]{16,}/gi;
 
-export function redact(text: string): string {
-  let out = text.replace(AUTH_HEADER_RE, "$1 [REDACTED]");
+// 只替换已登记的精确敏感值：用于工具的正常输出（Reddit 内容本身不能被改写）
+export function redactSecrets(text: string): string {
+  let out = text;
   for (const s of secrets) {
     if (out.includes(s)) out = out.split(s).join("[REDACTED]");
   }
   return out;
+}
+
+// 日志与错误文本：精确值 + 认证头形态的兜底
+export function redact(text: string): string {
+  return redactSecrets(text.replace(AUTH_HEADER_RE, "$1 [REDACTED]"));
 }
 
 export interface Logger {

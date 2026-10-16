@@ -42,11 +42,13 @@ describe("logger", () => {
     registerSecret("super-secret-value");
     const log = createLogger("info", (l) => lines.push(l));
     log.debug("hidden");
-    log.info("Authorization: Bearer abc.def-123 and super-secret-value");
+    log.info("Authorization: Bearer abc.def-123456789xyz and super-secret-value");
     expect(lines).toHaveLength(1);
     expect(lines[0]).toContain("Bearer [REDACTED]");
     expect(lines[0]).not.toContain("super-secret-value");
     expect(redact("Basic b2hYcG9xclpZdWIxa2c6")).toBe("Basic [REDACTED]");
+    // 普通文本不受影响
+    expect(redact("Basic setup guide for a Bearer of bad news")).toBe("Basic setup guide for a Bearer of bad news");
   });
 });
 

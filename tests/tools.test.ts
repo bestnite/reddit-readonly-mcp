@@ -176,6 +176,12 @@ describe("read tools", () => {
     expect(r.text).toContain("logged-in user");
   });
 
+  it("does not alter Reddit content that merely looks like an auth header", async () => {
+    const { call } = await connect({}, api(listing([rawPost("a", { title: "Basic setup guide: Bearer tokens explained" })])));
+    const r = await call("browse_subreddit", { subreddit: "LocalLLaMA" });
+    expect(r.json.data[0].title).toBe("Basic setup guide: Bearer tokens explained");
+  });
+
   it("never leaks tokens or credentials into tool output", async () => {
     const { call } = await connect(WRITE_ENV, (c) =>
       isTokenUrl(c.url) && c.url.includes("/auth/v2/")

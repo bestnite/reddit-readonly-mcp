@@ -4,7 +4,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import type { AppContext } from "../context.js";
 import { RssModeActiveError, RssUnsupportedError, toToolErrorText } from "../client/errors.js";
-import { redact } from "../logger.js";
+import { redactSecrets } from "../logger.js";
 import type { ToolDef } from "./define.js";
 
 import getRedditPost from "./read/get-reddit-post.js";
@@ -62,7 +62,7 @@ export const ALL_TOOLS: ToolDef<any>[] = [
 export async function runTool(tool: ToolDef<any>, args: unknown, ctx: AppContext): Promise<CallToolResult> {
   try {
     const result = await tool.handler(args as never, ctx);
-    return { content: [{ type: "text", text: redact(JSON.stringify(result, null, 2)) }] };
+    return { content: [{ type: "text", text: redactSecrets(JSON.stringify(result, null, 2)) }] };
   } catch (err) {
     const e = err instanceof RssModeActiveError ? new RssUnsupportedError(tool.name) : err;
     const text = toToolErrorText(e);

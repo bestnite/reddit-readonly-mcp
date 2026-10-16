@@ -116,7 +116,7 @@ async function httpCheck(): Promise<void> {
   const { child, base } = await startHttp();
   try {
     const health = await fetch(`${base}/health`);
-    const hj = await health.json();
+    const hj: any = await health.json();
     report(health.status === 200 && hj.status === "ok", "http GET /health", `${health.status} ${JSON.stringify(hj)}`);
 
     const headers = { "Content-Type": "application/json", Accept: "application/json, text/event-stream" };

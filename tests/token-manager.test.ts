@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { TokenManager, type TokenManagerOptions } from "../src/auth/token-manager.js";
-import { AuthBackendError } from "../src/client/errors.js";
+import { AuthBackendError, NetworkError } from "../src/client/errors.js";
 import { clock, FIXED_UUID, fixedDevice, json, mockFetch, text, tokenResponse, type Call } from "./helpers.js";
 
 const MOBILE_URL = "https://www.reddit.com/auth/v2/oauth/access-token/loid";
@@ -199,9 +199,7 @@ describe("backend cascade", () => {
   });
 
   it("falls back installed -> rss after 5 more failures, then reports rss", async () => {
-    const { tm, calls } = manager(() => {
-      throw new TypeError("fetch failed");
-    });
+    const { tm, calls } = manager(() => text("<html>blocked</html>", 403));
     const auth = await tm.getReadAuth();
     expect(auth.backend).toBe("rss");
     expect(calls.filter((c) => c.url === MOBILE_URL)).toHaveLength(5);
@@ -222,11 +220,38 @@ describe("backend cascade", () => {
     expect(tm.status().backend_switches[0]?.reason).toContain("invalid_client");
   });
 
+  it("network errors fail the call without counting towards fallback", async () => {
+    let down = true;
+    const { tm, calls } = manager(() => {
+      if (down) throw new TypeError("fetch failed", { cause: { code: "ENOTFOUND" } });
+      return tokenResponse();
+    });
+    const err = await tm.getReadAuth().catch((e) => e);
+    expect(err).toBeInstanceOf(NetworkError);
+    expect(calls).toHaveLength(1);
+    expect(tm.status()).toMatchObject({ active_backend: "mobile", degraded: false, consecutive_failures: 0 });
+    down = false;
+    expect((await tm.getReadAuth()).backend).toBe("mobile");
+  });
+
+  it("recovery from rss tries mobile, then installed", async () => {
+    let installedUp = false;
+    const { tm, clock: c } = manager((call) => {
+      if (call.url === INSTALLED_URL && installedUp) return json({ access_token: "inst-token-xxxxxx", expires_in: 86400 });
+      return text("no", 403);
+    });
+    expect((await tm.getReadAuth()).backend).toBe("rss");
+    installedUp = true;
+    c.advance(31 * 60_000);
+    expect((await tm.getReadAuth()).backend).toBe("installed");
+    expect(tm.status().backend_switches.map((s) => s.to)).toEqual(["installed", "rss", "installed"]);
+  });
+
   it("recovers to mobile after the recovery interval", async () => {
     let mobileUp = false;
     const { tm, clock: c } = manager((call) => {
       if (call.url === MOBILE_URL && mobileUp) return tokenResponse("mobile-again-xxxx");
-      throw new TypeError("fetch failed");
+      return text("no", 403);
     });
     expect((await tm.getReadAuth()).backend).toBe("rss");
     mobileUp = true;

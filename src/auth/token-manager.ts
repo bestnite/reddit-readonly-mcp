@@ -3,13 +3,15 @@
 //   - installed：/api/v1/access_token，installed_client grant，同样的 Basic(<id>:)
 //   - rss：不需要 token，由 RSS 后端提供有限的读能力
 // auto 模式下按 mobile → installed → rss 级联，每一级连续失败 5 次才切换到下一级。
+// 只有 HTTP 层面的拒绝（4xx/5xx、响应缺字段）才算"后端失败"；纯网络错误/超时说明连不上 Reddit，
+// 降级也无济于事（RSS 同样在 www.reddit.com），因此直接报错、不计数、不降级。
 //
 // 注意：这里拿到的永远是 application-only 的匿名 token，只用于读取公开数据。
 // 用户 token（写操作）在 user-token.ts，且必须使用用户自己注册的 app，绝不使用 Android client id。
 
 import type { AuthMode } from "../config.js";
 import { registerSecret, unregisterSecret, silentLogger, type Logger } from "../logger.js";
-import { AuthBackendError, normalizeFetchError } from "../client/errors.js";
+import { AuthBackendError, NetworkError, TimeoutError, normalizeFetchError } from "../client/errors.js";
 import type { AndroidDevice } from "./device.js";
 
 export type TokenBackend = "mobile" | "installed";
@@ -99,7 +101,8 @@ export class TokenManager {
       fetch: options.fetch ?? ((...a) => fetch(...a)),
       now: options.now ?? Date.now,
       sleep: options.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms))),
-      timeoutMs: options.timeoutMs ?? 20000,
+      // token 请求单独封顶 10 s，避免一次调用被拖得太久
+      timeoutMs: Math.min(options.timeoutMs ?? 20000, 10_000),
       logger: options.logger ?? silentLogger,
       failureThreshold: options.failureThreshold ?? 5,
       refreshMarginMs: options.refreshMarginMs ?? 120_000,
@@ -148,6 +151,13 @@ export class TokenManager {
   async invalidate(generation: number): Promise<void> {
     if (generation !== this.generation || !this.token) return;
     await this.refresh("unauthorized");
+  }
+
+  // 收到 429：若该 token 仍是当前 token，标记在下一次请求前轮换
+  requestRollover(generation: number): void {
+    if (generation !== this.generation || !this.token || this.rolloverPending) return;
+    this.rolloverPending = true;
+    this.opts.logger.info(`HTTP 429 on the current ${this.token.backend} token; rolling over to a fresh token`);
   }
 
   async forceRefresh(): Promise<void> {
@@ -252,17 +262,20 @@ export class TokenManager {
       return;
     }
 
-    // 降级状态下的恢复尝试：只试一次 mobile
+    // 降级状态下的恢复尝试：按级联顺序各试一次（处于 rss 时 mobile、installed 都试）
     if (this.recoveryDue()) {
       this.lastRecoveryAttempt = now;
-      try {
-        const tok = await this.requestToken("mobile");
-        this.switchTo("mobile", "recovered: mobile token endpoint works again");
-        this.install(tok);
-        this.consecutiveFailures = 0;
-        return;
-      } catch (err) {
-        this.opts.logger.info(`Recovery attempt on mobile backend failed: ${errDetail(err)}`);
+      const candidates: TokenBackend[] = this.active === "rss" ? ["mobile", "installed"] : ["mobile"];
+      for (const candidate of candidates) {
+        try {
+          const tok = await this.requestToken(candidate);
+          this.switchTo(candidate, `recovered: ${candidate} token endpoint works again`);
+          this.install(tok);
+          this.consecutiveFailures = 0;
+          return;
+        } catch (err) {
+          this.opts.logger.info(`Recovery attempt on ${candidate} backend failed: ${errDetail(err)}`);
+        }
       }
     }
 
@@ -278,6 +291,12 @@ export class TokenManager {
         return;
       } catch (err) {
         const detail = errDetail(err);
+        if (err instanceof NetworkError || err instanceof TimeoutError) {
+          // 连不上 Reddit：本次调用直接失败，不计入降级阈值
+          this.lastError = `${backend}: ${detail}`;
+          this.opts.logger.warn(`Cannot reach the ${backend} token endpoint (${detail}); not counting towards fallback`);
+          throw err;
+        }
         this.consecutiveFailures++;
         this.lastError = `${backend}: ${detail}`;
         this.opts.logger.warn(

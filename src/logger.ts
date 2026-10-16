@@ -6,16 +6,32 @@ import type { LogLevel } from "./config.js";
 
 const LEVELS: Record<LogLevel, number> = { debug: 10, info: 20, warn: 30, error: 40, silent: 100 };
 
-// 进程级敏感值登记表
+// 进程级敏感值登记表：
+//   secrets      —— token、loid、session 等随机串，日志、错误和工具输出中都替换
+//   credentials  —— 密码、client secret 等用户选择的值，只在日志和错误文本中替换
+//                   （它们可能是普通单词，不能因此改写 Reddit 内容）
 const secrets = new Set<string>();
+const credentials = new Set<string>();
 
 export function registerSecret(value: string | undefined | null): void {
   // 太短的值不登记，避免把普通单词误伤成 [REDACTED]
   if (value && value.length >= 6) secrets.add(value);
 }
 
+export function registerCredential(value: string | undefined | null): void {
+  if (value && value.length >= 4) credentials.add(value);
+}
+
 export function unregisterSecret(value: string | undefined | null): void {
   if (value) secrets.delete(value);
+}
+
+function replaceAll(text: string, values: Set<string>): string {
+  let out = text;
+  for (const s of values) {
+    if (out.includes(s)) out = out.split(s).join("[REDACTED]");
+  }
+  return out;
 }
 
 // 只匹配像凭据的长串（>= 16 个字符），避免误伤 "Basic setup" 之类的普通文本
@@ -23,16 +39,12 @@ const AUTH_HEADER_RE = /\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]{16,}/gi;
 
 // 只替换已登记的精确敏感值：用于工具的正常输出（Reddit 内容本身不能被改写）
 export function redactSecrets(text: string): string {
-  let out = text;
-  for (const s of secrets) {
-    if (out.includes(s)) out = out.split(s).join("[REDACTED]");
-  }
-  return out;
+  return replaceAll(text, secrets);
 }
 
-// 日志与错误文本：精确值 + 认证头形态的兜底
+// 日志与错误文本：精确值（含凭据）+ 认证头形态的兜底
 export function redact(text: string): string {
-  return redactSecrets(text.replace(AUTH_HEADER_RE, "$1 [REDACTED]"));
+  return replaceAll(redactSecrets(text.replace(AUTH_HEADER_RE, "$1 [REDACTED]")), credentials);
 }
 
 export interface Logger {

@@ -2,8 +2,8 @@
 // （REDDIT_CLIENT_ID / REDDIT_CLIENT_SECRET）+ 账号（REDDIT_USERNAME / REDDIT_PASSWORD）。
 // 与匿名读 token 完全隔离：不复用 Android 设备头，不复用 Android client id。
 
-import { missingWriteVars, PACKAGE_NAME, PACKAGE_VERSION, type Config } from "../config.js";
-import { registerSecret, unregisterSecret, silentLogger, type Logger } from "../logger.js";
+import { DEFAULT_MOBILE_CLIENT_ID, missingWriteVars, PACKAGE_NAME, PACKAGE_VERSION, type Config } from "../config.js";
+import { registerCredential, registerSecret, unregisterSecret, silentLogger, type Logger } from "../logger.js";
 import { MissingCredentialsError, ToolInputError, normalizeFetchError } from "../client/errors.js";
 import { E } from "../messages.js";
 
@@ -41,8 +41,8 @@ export class UserTokenManager {
     this.timeoutMs = o.timeoutMs ?? 20000;
     this.logger = o.logger ?? silentLogger;
     this.refreshMarginMs = o.refreshMarginMs ?? 120_000;
-    registerSecret(this.config.password);
-    registerSecret(this.config.clientSecret);
+    registerCredential(this.config.password);
+    registerCredential(this.config.clientSecret);
   }
 
   // Reddit 要求的 UA 格式：<platform>:<app id>:<version> (by /u/<username>)
@@ -68,7 +68,14 @@ export class UserTokenManager {
     const missing = this.missing();
     if (missing.length > 0) throw new MissingCredentialsError(tool, missing);
     // 硬性约束：Android client id 永远不能与账号密码一起使用
-    if (this.config.clientId === this.config.mobileClientId) throw new ToolInputError(E.mobileIdForUserGrant);
+    if (this.clientIdIsAndroidId()) throw new ToolInputError(E.mobileIdForUserGrant);
+  }
+
+  // 与当前配置的 Android id 或默认 Android id 相同（忽略大小写）都视为 Android id
+  private clientIdIsAndroidId(): boolean {
+    const id = this.config.clientId?.toLowerCase();
+    if (!id) return false;
+    return id === this.config.mobileClientId.toLowerCase() || id === DEFAULT_MOBILE_CLIENT_ID.toLowerCase();
   }
 
   async getToken(tool: string): Promise<string> {
@@ -96,7 +103,7 @@ export class UserTokenManager {
         REDDIT_PASSWORD: Boolean(this.config.password),
       },
       missing: this.missing(),
-      client_id_is_android_id: Boolean(this.config.clientId) && this.config.clientId === this.config.mobileClientId,
+      client_id_is_android_id: this.clientIdIsAndroidId(),
       token_cached: this.token !== null,
       token_expires_at: this.token ? new Date(this.token.expiresAt).toISOString() : null,
       last_error: this.lastError,

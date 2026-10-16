@@ -3,13 +3,30 @@
   "version": "0.1.0",
   "description": "Read-only Reddit MCP server that reads public data from datacenter IPs without Reddit app credentials (Android client token).",
   "type": "module",
-  "private": true,
   "license": "MIT",
+  "author": "nite <admin@nite07.com>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://git.nite07.com/nite/reddit-readonly-mcp.git"
+  },
+  "homepage": "https://git.nite07.com/nite/reddit-readonly-mcp#readme",
+  "bugs": {
+    "url": "https://git.nite07.com/nite/reddit-readonly-mcp/issues"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "reddit",
+    "read-only",
+    "rss",
+    "claude",
+    "llm"
+  ],
   "bin": {
     "reddit-readonly-mcp": "dist/cli.js"
   },
   "files": [
-    "dist/",
+    "dist/cli.js",
     "README.md",
     "README.zh-CN.md",
     "LICENSE"

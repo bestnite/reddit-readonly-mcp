@@ -19,7 +19,7 @@ async function connect(env: Record<string, string | undefined>): Promise<Client>
   const server = buildServer(ctx);
   const [a, b] = InMemoryTransport.createLinkedPair();
   await server.connect(a);
-  const client = new Client({ name: "reddit-mcp-smoke", version: "0.0.0" });
+  const client = new Client({ name: "reddit-readonly-mcp-smoke", version: "0.0.0" });
   await client.connect(b);
   return client;
 }

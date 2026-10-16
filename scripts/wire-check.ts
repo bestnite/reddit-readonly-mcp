@@ -72,7 +72,7 @@ async function stdioCheck(): Promise<void> {
   try {
     send(INIT);
     const init = await waitFor(1);
-    report(init.result?.serverInfo?.name === "reddit-mcp", "stdio initialize", `serverInfo=${JSON.stringify(init.result?.serverInfo)} protocol=${init.result?.protocolVersion}`);
+    report(init.result?.serverInfo?.name === "reddit-readonly-mcp", "stdio initialize", `serverInfo=${JSON.stringify(init.result?.serverInfo)} protocol=${init.result?.protocolVersion}`);
     send(INITIALIZED);
     send(LIST);
     const list = await waitFor(2);
@@ -146,7 +146,7 @@ async function httpCheck(): Promise<void> {
     const initRes = await fetch(`${base}/mcp`, { method: "POST", headers, body: JSON.stringify(INIT) });
     const sid = initRes.headers.get("mcp-session-id");
     const init = await readRpc(initRes);
-    report(initRes.status === 200 && !!sid && init?.result?.serverInfo?.name === "reddit-mcp", "http POST /mcp initialize", `status=${initRes.status} session=${sid ? "yes" : "no"} serverInfo=${JSON.stringify(init?.result?.serverInfo)}`);
+    report(initRes.status === 200 && !!sid && init?.result?.serverInfo?.name === "reddit-readonly-mcp", "http POST /mcp initialize", `status=${initRes.status} session=${sid ? "yes" : "no"} serverInfo=${JSON.stringify(init?.result?.serverInfo)}`);
 
     const sh = { ...headers, "mcp-session-id": sid ?? "", "mcp-protocol-version": init?.result?.protocolVersion ?? "2025-06-18" };
     const n = await fetch(`${base}/mcp`, { method: "POST", headers: sh, body: JSON.stringify(INITIALIZED) });

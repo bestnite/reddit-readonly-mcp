@@ -1,12 +1,12 @@
 {
-  "name": "reddit-mobile-mcp",
+  "name": "reddit-readonly-mcp",
   "version": "0.1.0",
   "description": "Read-only Reddit MCP server that reads public data from datacenter IPs without Reddit app credentials (Android client token).",
   "type": "module",
   "private": true,
   "license": "MIT",
   "bin": {
-    "reddit-mcp": "dist/cli.js"
+    "reddit-readonly-mcp": "dist/cli.js"
   },
   "files": [
     "dist/",

@@ -1,6 +1,6 @@
 [English](README.md) | **简体中文**
 
-# reddit-mcp
+# reddit-readonly-mcp
 
 一个轻量、高效的 [Model Context Protocol (MCP)](https://modelcontextprotocol.io) 服务器。**无需任何 Reddit API 密钥或账号凭据，即可直接从机房 / VPS IP 稳定读取 Reddit 公开数据**（帖子、评论、版块与用户信息）。
 
@@ -28,8 +28,8 @@
 ### 1. 构建项目
 
 ```bash
-git clone https://github.com/.../reddit-mcp.git # 或本地代码目录
-cd reddit-mcp
+git clone https://github.com/.../reddit-readonly-mcp.git # 或本地代码目录
+cd reddit-readonly-mcp
 npm install
 npm run build
 ```
@@ -47,7 +47,7 @@ npm run build
   "mcpServers": {
     "reddit": {
       "command": "node",
-      "args": ["/绝对路径/reddit-mcp/dist/cli.js"]
+      "args": ["/绝对路径/reddit-readonly-mcp/dist/cli.js"]
     }
   }
 }
@@ -60,7 +60,7 @@ mcp_servers:
   reddit:
     command: "node"
     args:
-      - "/绝对路径/reddit-mcp/dist/cli.js"
+      - "/绝对路径/reddit-readonly-mcp/dist/cli.js"
 ```
 
 #### Streamable HTTP 模式
@@ -124,7 +124,7 @@ node dist/cli.js --http --port 3000 --host 127.0.0.1
 
 ## ⚙️ 架构设计与容灾降级
 
-为了在无需凭据的前提下实现稳定读取，`reddit-mcp` 实现了三层容灾流水线：
+为了在无需凭据的前提下实现稳定读取，`reddit-readonly-mcp` 实现了三层容灾流水线：
 
 ```
 [请求发起]

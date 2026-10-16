@@ -160,7 +160,7 @@ export async function startHttp(ctx: AppContext, opts: HttpOptions): Promise<Ser
   });
   const addr = server.address();
   const port = typeof addr === "object" && addr ? addr.port : opts.port;
-  ctx.logger.info(`reddit-mcp listening on http://${opts.host.includes(":") ? `[${opts.host}]` : opts.host}:${port}/mcp`);
+  ctx.logger.info(`reddit-readonly-mcp listening on http://${opts.host.includes(":") ? `[${opts.host}]` : opts.host}:${port}/mcp`);
   if (!loopback) ctx.logger.warn(`HTTP transport bound to non-loopback address ${opts.host}; there is no authentication in front of /mcp`);
 
   const shutdown = () => {

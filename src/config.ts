@@ -4,7 +4,7 @@ export type AuthMode = "auto" | "mobile" | "installed" | "rss";
 export type LogLevel = "debug" | "info" | "warn" | "error" | "silent";
 
 export const DEFAULT_MOBILE_CLIENT_ID = "ohXpoqrZYub1kg";
-export const PACKAGE_NAME = "reddit-mcp";
+export const PACKAGE_NAME = "reddit-readonly-mcp";
 export const PACKAGE_VERSION = "0.1.0";
 
 export interface Config {

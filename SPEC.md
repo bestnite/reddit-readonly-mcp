@@ -1,4 +1,4 @@
-# SPEC — reddit-mcp: a Reddit MCP server that works from a datacenter IP with no Reddit app credentials
+# SPEC — reddit-readonly-mcp: a Reddit MCP server that works from a datacenter IP with no Reddit app credentials
 
 You are implementing this project from scratch. Read this whole file first, then build it.
 Nothing about the surrounding conversation is available to you — everything you need is here.
@@ -12,7 +12,7 @@ Android client (the technique used by [redlib](https://github.com/redlib-org/red
 - Tool surface and behaviour are modelled on
   [jordanburke/reddit-mcp-server](https://github.com/jordanburke/reddit-mcp-server): read tools
   plus write tools, safe mode, bot disclosure.
-- Distribution: `npx reddit-mcp` must work (package `bin` entry), plus an HTTP transport mode.
+- Distribution: `npx reddit-readonly-mcp` must work (package `bin` entry), plus an HTTP transport mode.
 - This is a **local, private** project for now: no npm publish, no pushing to a remote.
 
 **Hard constraint (do not violate):** the spoofed Android client identity is used **only** to obtain
@@ -66,8 +66,8 @@ Ported from redlib `src/oauth.rs` + `src/oauth_resources.rs`:
 ## 3. Project layout
 
 ```
-~/mcp/reddit-mcp/
-  package.json            # type: module, bin: {"reddit-mcp": "dist/cli.js"}, engines.node >=20
+~/mcp/reddit-readonly-mcp/
+  package.json            # type: module, bin: {"reddit-readonly-mcp": "dist/cli.js"}, engines.node >=20
   tsconfig.json           # strict
   src/cli.ts              # arg parsing (--http, --port, --host), starts one of the two transports
   src/server.ts           # builds the McpServer and registers all tools
@@ -195,7 +195,7 @@ voting or private-messaging tools at all.
 
 ## 6. Transports
 
-- **stdio** (default): `npx reddit-mcp` or `node dist/cli.js` — must never print anything to stdout
+- **stdio** (default): `npx reddit-readonly-mcp` or `node dist/cli.js` — must never print anything to stdout
   that is not an MCP protocol message; all logging goes to **stderr**.
 - **HTTP**: `--http [--port 3000] [--host 127.0.0.1]` exposing streamable HTTP MCP on `/mcp`
   (and `/health` for a plain liveness JSON). Bind to loopback by default.

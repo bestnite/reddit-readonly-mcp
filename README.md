@@ -1,10 +1,10 @@
 **English** | [简体中文](README.zh-CN.md)
 
-# reddit-mcp
+# reddit-readonly-mcp
 
 An unofficial [Model Context Protocol (MCP)](https://modelcontextprotocol.io) server designed to fetch public Reddit content reliably from datacenter and VPS IPs **without any Reddit API credentials or user accounts**.
 
-By emulating Reddit's official Android application token exchange (based on the technique from [redlib](https://github.com/redlib-org/redlib)), `reddit-mcp` acquires anonymous application-only tokens to query `oauth.reddit.com` directly with high resilience.
+By emulating Reddit's official Android application token exchange (based on the technique from [redlib](https://github.com/redlib-org/redlib)), `reddit-readonly-mcp` acquires anonymous application-only tokens to query `oauth.reddit.com` directly with high resilience.
 
 ---
 
@@ -28,8 +28,8 @@ By emulating Reddit's official Android application token exchange (based on the 
 ### 1. Build from Source
 
 ```bash
-git clone https://github.com/.../reddit-mcp.git # or local folder
-cd reddit-mcp
+git clone https://github.com/.../reddit-readonly-mcp.git # or local folder
+cd reddit-readonly-mcp
 npm install
 npm run build
 ```
@@ -47,7 +47,7 @@ Add this to your MCP configuration file (e.g. `claude_desktop_config.json` or Cu
   "mcpServers": {
     "reddit": {
       "command": "node",
-      "args": ["/ABSOLUTE/PATH/TO/reddit-mcp/dist/cli.js"]
+      "args": ["/ABSOLUTE/PATH/TO/reddit-readonly-mcp/dist/cli.js"]
     }
   }
 }
@@ -60,7 +60,7 @@ mcp_servers:
   reddit:
     command: "node"
     args:
-      - "/ABSOLUTE/PATH/TO/reddit-mcp/dist/cli.js"
+      - "/ABSOLUTE/PATH/TO/reddit-readonly-mcp/dist/cli.js"
 ```
 
 #### Streamable HTTP Mode
@@ -124,7 +124,7 @@ The server provides **12 strictly read-only tools** (annotated with `readOnlyHin
 
 ## ⚙️ Architecture & Fallback Cascade
 
-`reddit-mcp` utilizes a multi-tiered failover pipeline to maintain high availability:
+`reddit-readonly-mcp` utilizes a multi-tiered failover pipeline to maintain high availability:
 
 ```
 [Request]

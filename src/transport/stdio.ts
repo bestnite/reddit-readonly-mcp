@@ -8,7 +8,7 @@ export async function startStdio(ctx: AppContext): Promise<void> {
   const server = buildServer(ctx);
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  ctx.logger.info("reddit-mcp listening on stdio");
+  ctx.logger.info("reddit-readonly-mcp listening on stdio");
   const shutdown = async () => {
     await server.close().catch(() => undefined);
     process.exit(0);

@@ -4,10 +4,10 @@ Guidance for coding agents working on this repository.
 
 ## What this is
 
-A TypeScript (ESM, Node ≥ 20) MCP server for Reddit that is **read-only by design**. Every request uses an anonymous,
-application-only token obtained by impersonating Reddit's Android app (redlib's technique). There is no user-token
-path: writes and account tools were removed on purpose, because they need either a registered Reddit app
-(approval-gated since Nov 2025) or the user's account credentials, both out of scope.
+`reddit-readonly-mcp`: a TypeScript (ESM, Node ≥ 20) MCP server for Reddit that is **read-only by design**. Every
+request uses an anonymous, application-only token obtained by impersonating Reddit's Android app (redlib's technique).
+There is no user-token path: writes and account tools were removed on purpose, because they need either a registered
+Reddit app (approval-gated since Nov 2025) or the user's account credentials, both out of scope.
 
 ## Hard rules
 
@@ -67,4 +67,5 @@ npm run smoke                   # live, hits real Reddit; exercises all 12 tools
 ```
 
 Commits use conventional prefixes (`feat:`, `fix:`, `test:`, `docs:`, `chore:`, `refactor:`). There is no remote;
-do not publish to npm. The npm package name is `reddit-mobile-mcp`; the executable is `reddit-mcp`.
+do not publish to npm. The npm package name and the executable are both `reddit-readonly-mcp` (free on npm, checked
+2026-10-16; the name `reddit-mcp` is taken by an unrelated npm package).

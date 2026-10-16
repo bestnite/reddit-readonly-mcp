@@ -46,7 +46,7 @@ export function createLogger(level: LogLevel = "info", write: (line: string) => 
   const threshold = LEVELS[level];
   const emit = (lvl: Exclude<LogLevel, "silent">, msg: string) => {
     if (LEVELS[lvl] < threshold) return;
-    write(`${new Date().toISOString()} [reddit-mcp] ${lvl.toUpperCase()} ${redact(msg)}\n`);
+    write(`${new Date().toISOString()} [reddit-readonly-mcp] ${lvl.toUpperCase()} ${redact(msg)}\n`);
   };
   return {
     debug: (m) => emit("debug", m),

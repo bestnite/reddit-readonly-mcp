@@ -10,10 +10,10 @@ import { parseArgs, type CliArgs } from "./cli-args.js";
 const HELP = `${PACKAGE_NAME} ${PACKAGE_VERSION} - Reddit MCP server
 
 Usage:
-  reddit-mcp                       stdio transport (default)
-  reddit-mcp --http [--port 3000] [--host 127.0.0.1]
+  reddit-readonly-mcp              stdio transport (default)
+  reddit-readonly-mcp --http [--port 3000] [--host 127.0.0.1]
                                    Streamable HTTP transport on /mcp (+ GET /health)
-  reddit-mcp --help | --version
+  reddit-readonly-mcp --help | --version
 
 Read-only by design: no Reddit credentials are used.
 Configuration is read from environment variables (REDDIT_AUTH_MODE, REDDIT_CACHE, ...); see README.md.

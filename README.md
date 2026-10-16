@@ -49,7 +49,7 @@ Example MCP client entry (stdio), using an absolute path to your checkout:
 
 In stdio mode nothing but MCP protocol messages is written to stdout; all logs go to stderr. The HTTP transport
 binds to loopback by default and rejects requests whose `Host` header is not a loopback name (DNS-rebinding
-protection). It has **no authentication** — don't bind it to a public interface unless something else protects it.
+protection). Idle HTTP sessions are closed after 30 minutes. It has **no authentication** — don't bind it to a public interface unless something else protects it.
 
 ## How reading works
 
@@ -65,10 +65,15 @@ Details:
 - One Android device identity (random real app version from redlib's list, Android 9–14, uuid for
   `client-vendor-id` / `X-Reddit-Device-Id`) is generated per process and reused for every request.
 - The token is cached in memory and refreshed **2 minutes before** it expires. Only one refresh runs at a time.
+- Only HTTP-level rejections (4xx/5xx, malformed token response) count as backend failures. Pure network errors and
+  timeouts fail the current call with a network error and do **not** push the cascade towards RSS (RSS lives on the
+  same host, so degrading would not help). Token requests time out after at most 10 s.
 - `x-ratelimit-remaining` is tracked on every response; at **≤ 5** the token is rolled over (a fresh token gets a
-  fresh ~100-request window). On `401` the token is refreshed and the request retried once. `429` is retried up to
-  `REDDIT_MAX_RETRIES` times, honouring `Retry-After`.
-- After degrading, the server re-tries the `mobile` backend every 30 minutes and switches back when it works.
+  fresh ~100-request window). A `429` on an anonymous read first triggers the same rollover; after that `429` is
+  retried up to `REDDIT_MAX_RETRIES` times, honouring `Retry-After`. On `401` the token is refreshed and the request
+  retried once.
+- After degrading, the server re-tries the better backends (mobile, then installed) every 30 minutes and switches back
+  when one works.
 - Tokens, `x-reddit-loid`, `x-reddit-session` and credentials are never logged or returned (logs and tool output are
   additionally passed through a redaction filter).
 - `REDDIT_AUTH_MODE=mobile|installed|rss` pins one backend and disables the cascade.
@@ -137,8 +142,9 @@ There are deliberately **no voting or private-messaging tools** (Responsible Bui
 | `standard` (default) | 2 s | yes | last 10 | 30 |
 | `strict` | 5 s | yes | last 20 | 10 |
 
-Identical content (case/whitespace-insensitive) posted again is rejected; the same content sent to a different
-subreddit is rejected as cross-posting. Writes are serialised. With `REDDIT_BOT_DISCLOSURE=auto` a footer is appended
+Identical content (case/whitespace-insensitive) posted again via `create_post` / `reply_to_post` is rejected; the
+same content sent to a different subreddit is rejected as cross-posting. Edits and deletes only get the delay and the
+hourly cap (repeating an edit is idempotent). Writes are serialised. With `REDDIT_BOT_DISCLOSURE=auto` a footer is appended
 to text posts, replies and edits.
 
 ### Diagnostics

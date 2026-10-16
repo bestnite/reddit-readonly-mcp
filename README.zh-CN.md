@@ -44,7 +44,7 @@ MCP 客户端配置示例（stdio），请使用你本地检出目录的绝对�
 ```
 
 stdio 模式下 stdout 只输出 MCP 协议消息，所有日志都写到 stderr。HTTP 传输默认只监听回环地址，并拒绝 `Host`
-头不是回环名称的请求（防 DNS rebinding）。HTTP 端点**没有鉴权**——除非前面有其他保护，否则不要绑定到公网接口。
+头不是回环名称的请求（防 DNS rebinding）。空闲 30 分钟的 HTTP 会话会被关闭。HTTP 端点**没有鉴权**——除非前面有其他保护，否则不要绑定到公网接口。
 
 ## 读取原理
 
@@ -60,9 +60,12 @@ stdio 模式下 stdout 只输出 MCP 协议消息，所有日志都写到 stderr
 - 每个进程生成一次 Android 设备身份（从 redlib 的真实版本列表中随机选取 app 版本、Android 9–14、用于
   `client-vendor-id` / `X-Reddit-Device-Id` 的 uuid），之后所有请求复用。
 - token 缓存在内存中，**到期前 2 分钟**刷新；同一时刻只有一个刷新在进行。
+- 只有 HTTP 层面的拒绝（4xx/5xx、token 响应缺字段）才计为后端失败。纯网络错误和超时只会让本次调用返回网络错误，
+  **不会**推动级联降级到 RSS（RSS 与 token 接口在同一主机上，降级无济于事）。token 请求最长 10 秒超时。
 - 每个响应都会记录 `x-ratelimit-remaining`；降到 **≤ 5** 时轮换 token（新 token 拥有新的约 100 次请求窗口）。
-  遇到 `401` 刷新 token 并重试一次；`429` 按 `Retry-After` 最多重试 `REDDIT_MAX_RETRIES` 次。
-- 降级之后，每 30 分钟重新尝试一次 `mobile` 后端，恢复后自动切回。
+  匿名读请求遇到 `429` 时先触发同样的轮换，之后再按 `Retry-After` 最多重试 `REDDIT_MAX_RETRIES` 次。
+  遇到 `401` 刷新 token 并重试一次。
+- 降级之后，每 30 分钟按顺序（先 mobile，再 installed）重新尝试更优的后端，成功后自动切回。
 - token、`x-reddit-loid`、`x-reddit-session` 和凭据永远不会被记录到日志或返回（日志和工具输出还会经过一层脱敏过滤）。
 - `REDDIT_AUTH_MODE=mobile|installed|rss` 固定使用某一后端，并关闭级联降级。
 
@@ -129,7 +132,8 @@ client id。开启了两步验证的账号无法使用 password grant。
 | `standard`（默认） | 2 秒 | 是 | 最近 10 条 | 30 |
 | `strict` | 5 秒 | 是 | 最近 20 条 | 10 |
 
-再次发布相同内容（忽略大小写和空白差异）会被拒绝；把同一内容发到不同版块会被当作跨版块刷屏而拒绝。写操作串行执行。
+通过 `create_post` / `reply_to_post` 再次发布相同内容（忽略大小写和空白差异）会被拒绝；把同一内容发到不同版块会被当作
+跨版块刷屏而拒绝。编辑和删除只受写入间隔和每小时上限约束（重复同一编辑是幂等的）。写操作串行执行。
 设置 `REDDIT_BOT_DISCLOSURE=auto` 时，会在文本帖、回复和编辑内容末尾追加页脚。
 
 ### 诊断

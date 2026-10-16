@@ -71,7 +71,7 @@ export const TOOL_DESCRIPTIONS = {
     "The posting rules of a subreddit (short name, description, which content kinds they apply to). Read-only, anonymous. Check this before create_post.",
   get_trending_subreddits: `Currently popular subreddits (Reddit's /subreddits/popular listing). Read-only, anonymous. ${LISTING_NOTE}`,
   get_post_comments:
-    'The comment tree of a post. Returns {"post": {...}, "data": [comments with nested "replies"], "more": [stubs], "after": null}. Collapsed branches appear as "more" stubs (in the tree and in the top-level "more" list); expand them with get_more_comments. Read-only, anonymous.',
+    'The comment tree of a post. Returns {"post": {...}, "data": [comments with nested "replies"], "more": [stubs], "after": null}. Collapsed branches are listed in "more" (parent_id, count, children ids) and counted on the parent comment as "more_replies"; expand them with get_more_comments (stubs with continue_thread=true need the parent comment\'s permalink instead). Read-only, anonymous.',
   get_more_comments:
     "Expand 'more' stubs from get_post_comments via Reddit's /api/morechildren. Returns a flat list of comments with parent_id. Note: Reddit currently answers this endpoint with HTTP 403 for anonymous tokens; when user credentials are configured the call is retried with the user token.",
   get_post_flairs:

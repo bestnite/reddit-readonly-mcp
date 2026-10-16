@@ -37,6 +37,9 @@ npx reddit-mcp            # or: node dist/cli.js
 npx reddit-mcp --http --port 3000 --host 127.0.0.1
 ```
 
+The npm package name is `reddit-mobile-mcp` (`reddit-mcp` is already taken on npm); the executable it
+installs is `reddit-mcp`, so once published the command would be `npx reddit-mobile-mcp`.
+
 Example MCP client entry (stdio), using an absolute path to your checkout:
 
 ```json

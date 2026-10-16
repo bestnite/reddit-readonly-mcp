@@ -33,6 +33,9 @@ npx reddit-mcp            # 或：node dist/cli.js
 npx reddit-mcp --http --port 3000 --host 127.0.0.1
 ```
 
+npm 包名为 `reddit-mobile-mcp`（`reddit-mcp` 在 npm 上已被占用），安装后的可执行文件名为 `reddit-mcp`，
+因此发布后命令是 `npx reddit-mobile-mcp`。
+
 MCP 客户端配置示例（stdio），请使用你本地检出目录的绝对路径：
 
 ```json

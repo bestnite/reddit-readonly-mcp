@@ -1,5 +1,5 @@
 {
-  "name": "reddit-mcp",
+  "name": "reddit-mobile-mcp",
   "version": "0.1.0",
   "description": "Reddit MCP server that reads public data from datacenter IPs without Reddit app credentials (Android client token), with optional credentialed write tools.",
   "type": "module",

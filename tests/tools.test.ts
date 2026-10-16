@@ -32,6 +32,12 @@ const EXPECTED_TOOLS = [
   "get_top_posts", "get_trending_subreddits", "get_user_comments", "get_user_info", "get_user_posts", "search_reddit",
 ];
 
+// 已删除的写工具和需要用户身份的工具：不能再出现在 tools/list 中，也不能被调用
+const REMOVED_TOOLS = [
+  "create_post", "reply_to_post", "edit_post", "edit_comment", "delete_post", "delete_comment",
+  "get_me", "get_my_overview", "get_my_saved", "get_post_flairs", "get_more_comments",
+];
+
 describe("tool surface", () => {
   it("lists exactly the documented tools, with no voting or messaging tools", async () => {
     const { client } = await connect({}, () => json({}));
@@ -39,6 +45,44 @@ describe("tool surface", () => {
     expect(tools.map((t) => t.name).sort()).toEqual(EXPECTED_TOOLS);
     expect(tools.some((t) => /vote|message|pm|chat/i.test(t.name))).toBe(false);
     expect(tools.find((t) => t.name === "doctor")!.inputSchema.properties ?? {}).toEqual({});
+  });
+
+  it("is strictly read-only: every tool is annotated read-only and removed tools are gone", async () => {
+    const { client, call, calls } = await connect({}, () => json({}));
+    const { tools } = await client.listTools();
+    for (const t of tools) {
+      expect(t.annotations?.readOnlyHint).toBe(true);
+      expect(t.annotations?.destructiveHint).not.toBe(true);
+    }
+    for (const name of REMOVED_TOOLS) {
+      expect(tools.some((t) => t.name === name)).toBe(false);
+      const r = await call(name, {});
+      expect(r.isError).toBe(true);
+      expect(r.text).toContain(`Tool ${name} not found`);
+    }
+    expect(calls).toHaveLength(0);
+  });
+
+  it("get_post_comments says its 'more' stubs cannot be expanded", async () => {
+    const { client } = await connect({}, () => json({}));
+    const { tools } = await client.listTools();
+    const d = tools.find((t) => t.name === "get_post_comments")!.description!;
+    expect(d).toContain("CANNOT be expanded");
+    expect(d).toContain("403");
+    expect(d).not.toContain("get_more_comments");
+  });
+
+  it("no agent-facing text mentions removed tools or credentials", async () => {
+    const { client } = await connect({}, () => json({}));
+    const { tools } = await client.listTools();
+    const instructions = client.getInstructions() ?? "";
+    const texts = [instructions, ...tools.map((t) => JSON.stringify(t))];
+    for (const t of texts) {
+      for (const word of [...REMOVED_TOOLS, "REDDIT_CLIENT_ID", "REDDIT_PASSWORD", "REDDIT_SAFE_MODE", "REDDIT_BOT"]) {
+        expect(t).not.toContain(word);
+      }
+    }
+    expect(instructions).toContain("READ-ONLY");
   });
 });
 
@@ -85,6 +129,7 @@ describe("read tools", () => {
     const r = await call("get_user_info", { username: "spez" });
     expect(r.isError).toBe(true);
     const d = await call("doctor");
+    expect(Object.keys(d.json)).toEqual(["server", "read_backend", "rss", "cache", "requests", "config"]);
     for (const out of [r.text, d.text]) {
       for (const secret of ["anon-secret-token-1234", "loid-value-123456", "session-value-123456"]) {
         expect(out).not.toContain(secret);

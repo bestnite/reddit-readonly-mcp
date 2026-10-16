@@ -29,6 +29,21 @@ describe("config", () => {
     expect(config.cacheEnabled).toBe(true);
     expect(problems).toHaveLength(2);
   });
+
+  it("ignores the removed credential / write variables", () => {
+    const { config, problems } = loadConfig({
+      REDDIT_CLIENT_ID: "myAppId123",
+      REDDIT_CLIENT_SECRET: "myAppSecret456",
+      REDDIT_USERNAME: "botuser",
+      REDDIT_PASSWORD: "hunter2-password",
+      REDDIT_SAFE_MODE: "paranoid",
+      REDDIT_BOT_DISCLOSURE: "auto",
+      REDDIT_BOT_FOOTER: "footer",
+    });
+    expect(config).toEqual(loadConfig({}).config);
+    expect(JSON.stringify(config)).not.toMatch(/myAppId123|myAppSecret456|botuser|hunter2|footer/);
+    expect(problems).toEqual([]);
+  });
 });
 
 describe("logger", () => {

@@ -6,16 +6,19 @@
 即可从机房 / VPS IP 读取 Reddit 公开数据**。它按照 Reddit 官方 Android 客户端的方式获取匿名的 application-only
 token（即 [redlib](https://github.com/redlib-org/redlib)（MIT）所用的技术），然后访问 `oauth.reddit.com`。
 
-工具名称与语义沿用 [jordanburke/reddit-mcp-server](https://github.com/jordanburke/reddit-mcp-server)，为其中一个
-编写的提示词可以直接用于另一个。提供你自己注册的 Reddit app 和账号后，还可以使用写操作工具。
+**本服务器是只读的。** 它提供十二个工具，用于读取公开的帖子、评论、用户和版块信息；没有任何发帖、回复、编辑、删除、
+投票、私信或读取账号数据的工具，也从不索要 Reddit 凭据。读工具的名称与语义沿用
+[jordanburke/reddit-mcp-server](https://github.com/jordanburke/reddit-mcp-server)，为其中一个编写的只读提示词可以直接用于另一个。
 
 ## ⚠️ 风险提示（请先阅读）
 
+- **本服务器在设计上就是只读的。** 写操作工具是被刻意移除的：发帖、回复和投票都需要用户上下文的 token，
+  这意味着要么有一个注册过的 Reddit app（自助创建已于 2025 年 11 月关闭，现在需要审批），要么把你的 Reddit 账号凭据交给本工具。
+  这两者都不在本项目范围内，因此没有任何代码路径会接受 Reddit 用户名、密码或 app secret。
 - **client id `ohXpoqrZYub1kg` 是 Reddit Android 客户端公开的常量。** 冒充官方 Android 客户端与 Reddit 的
   Responsible Builder Policy 相冲突，Reddit 随时可能吊销或更换该 id。失效时可以通过 `REDDIT_MOBILE_CLIENT_ID`
-  覆盖，或改用自己注册的 app。
-- **伪装身份只用于读取公开数据。** 它绝不用于写操作或账号操作；代码会拒绝把 Android client id 与用户名/密码组合使用。
-  写操作只走你自己的 `REDDIT_CLIENT_ID` / `REDDIT_CLIENT_SECRET` + `REDDIT_USERNAME` / `REDDIT_PASSWORD`。
+  覆盖；在此期间级联会降级到 RSS，两个支持 RSS 的工具仍可使用。
+- **伪装身份只用于读取公开数据。** 它只换取匿名的 application-only token；服务器不会以任何 Reddit 账号的身份执行操作。
 - **不保证可用性和正确性。** 这是一个调用未公开接口的非官方客户端，任何接口都可能在没有通知的情况下变更或消失。
 
 ## 快速开始
@@ -69,22 +72,17 @@ stdio 模式下 stdout 只输出 MCP 协议消息，所有日志都写到 stderr
   匿名读请求遇到 `429` 时先触发同样的轮换，之后再按 `Retry-After` 最多重试 `REDDIT_MAX_RETRIES` 次。
   遇到 `401` 刷新 token 并重试一次。
 - 降级之后，每 30 分钟按顺序（先 mobile，再 installed）重新尝试更优的后端，成功后自动切回。
-- token、`x-reddit-loid`、`x-reddit-session` 和凭据永远不会被记录到日志或返回（日志和工具输出还会经过一层脱敏过滤）。
+- token、`x-reddit-loid` 和 `x-reddit-session` 永远不会被记录到日志或返回（日志和工具输出还会经过一层脱敏过滤）。
 - `REDDIT_AUTH_MODE=mobile|installed|rss` 固定使用某一后端，并关闭级联降级。
 
 ## 配置
 
-所有环境变量均为可选。
+所有环境变量均为可选。没有任何凭据类变量：不会读取 Reddit app 的 id / secret，也不会读取账号用户名 / 密码。
 
 | 变量 | 默认值 | 含义 |
 |---|---|---|
 | `REDDIT_AUTH_MODE` | `auto` | `auto` / `mobile` / `installed` / `rss` |
 | `REDDIT_MOBILE_CLIENT_ID` | `ohXpoqrZYub1kg` | Android client id（被吊销时的覆盖入口） |
-| `REDDIT_CLIENT_ID` / `REDDIT_CLIENT_SECRET` | – | 你注册的 Reddit app（"script" 类型），写操作必需 |
-| `REDDIT_USERNAME` / `REDDIT_PASSWORD` | – | 账号，写操作必需 |
-| `REDDIT_SAFE_MODE` | `standard` | `off` / `standard` / `strict` |
-| `REDDIT_BOT_DISCLOSURE` | `off` | `auto` / `off` |
-| `REDDIT_BOT_FOOTER` | 内置 | disclosure 为 `auto` 时使用的自定义页脚 |
 | `REDDIT_CACHE` | `on` | 内存读缓存 `on` / `off` |
 | `REDDIT_CACHE_MAX_MB` | `50` | LRU 上限 |
 | `REDDIT_MAX_RETRIES` | `3` | 429 时按 `Retry-After` 重试的次数 |
@@ -93,11 +91,9 @@ stdio 模式下 stdout 只输出 MCP 协议消息，所有日志都写到 stderr
 
 ## 工具
 
-列表类工具接受 `limit`，在 Reddit 支持时还接受 `after`，返回 `{"data": [...], "after": cursor|null}`，字段经过裁剪
-（id、fullname、title、author、subreddit、score、num_comments、ISO 格式的 `created_utc`、permalink、url、截断后的
-selftext/body）——绝不返回 Reddit 原始 JSON。
-
-### 读取（匿名）
+恰好十二个工具，全部只读、匿名（标注为 `readOnlyHint: true`）。列表类工具接受 `limit`，在 Reddit 支持时还接受
+`after`，返回 `{"data": [...], "after": cursor|null}`，字段经过裁剪（id、fullname、title、author、subreddit、score、
+num_comments、ISO 格式的 `created_utc`、permalink、url、截断后的 selftext/body）——绝不返回 Reddit 原始 JSON。
 
 | 工具 | 说明 |
 |---|---|
@@ -105,44 +101,20 @@ selftext/body）——绝不返回 Reddit 原始 JSON。
 | `get_top_posts` | `subreddit?`、`time_filter`（默认 week）。**RSS 模式下可用。** |
 | `browse_subreddit` | `sort`：hot/new/top/rising/controversial，top/controversial 使用 `time_filter`。**RSS 模式下可用**（controversial 除外）。 |
 | `search_reddit` | `query`（别名 `q`）、可选 `subreddit`、`sort`、`time_filter`、`type`（link/sr/user） |
+| `get_post_comments` | `limit`、`depth`、`sort`；嵌套回复 + `more` 桩。本服务器**无法展开** `more` 桩：Reddit 对匿名 token 的 `/api/morechildren` 请求返回 HTTP 403。需要更多评论时请调大 `limit` / `depth`。 |
 | `get_user_info` | 公开资料 |
 | `get_user_posts` / `get_user_comments` | `sort`、`time_filter`、分页 |
 | `get_subreddit_info` | 版块元数据与侧边栏 |
 | `get_subreddit_rules` | 发帖规则 |
 | `get_trending_subreddits` | Reddit 的 `/subreddits/popular` |
-| `get_post_comments` | `limit`、`depth`、`sort`；嵌套回复 + `more` 桩 |
-| `get_more_comments` | 通过 `/api/morechildren` 展开 `more` 桩。Reddit 目前对**匿名 token 返回 403**；配置了用户凭据时会用用户 token 重试同一接口。 |
-| `get_post_flairs` | Reddit 要求登录用户（`USER_REQUIRED`）；配置了凭据时使用用户 token，否则返回明确的错误。 |
+| `doctor` | 诊断，无参数：当前后端、级联是否已降级（及原因）、token 到期时间、当前 `x-ratelimit-remaining` / 重置窗口 / 轮换次数、缓存与请求统计。其他工具出错时先调用它。 |
 
-### 账号（需要用户凭据）
+刻意不提供：
 
-`get_me`、`get_my_overview`、`get_my_saved`——缺少凭据时返回列明缺失变量的错误。
-
-### 写操作（需要用户凭据）
-
-`create_post`（文本/链接，可选 flair）、`reply_to_post`、`edit_post`、`edit_comment`、`delete_post`、
-`delete_comment`（删除是**永久性**的）。每个写操作都需要 `REDDIT_CLIENT_ID`、`REDDIT_CLIENT_SECRET`、
-`REDDIT_USERNAME`、`REDDIT_PASSWORD` 四项全部配置；password grant 使用的是*你自己的* app，绝不使用 Android
-client id。开启了两步验证的账号无法使用 password grant。
-
-本项目刻意**不提供投票和私信工具**（Responsible Builder Policy）。
-
-#### 安全模式
-
-| 模式 | 写操作最小间隔 | 重复 / 跨版块重复检测 | 历史条数 | 每小时写入上限 |
-|---|---|---|---|---|
-| `off` | – | – | – | 不限 |
-| `standard`（默认） | 2 秒 | 是 | 最近 10 条 | 30 |
-| `strict` | 5 秒 | 是 | 最近 20 条 | 10 |
-
-通过 `create_post` / `reply_to_post` 再次发布相同内容（忽略大小写和空白差异）会被拒绝；把同一内容发到不同版块会被当作
-跨版块刷屏而拒绝。编辑和删除只受写入间隔和每小时上限约束（重复同一编辑是幂等的）。写操作串行执行。
-设置 `REDDIT_BOT_DISCLOSURE=auto` 时，会在文本帖、回复和编辑内容末尾追加页脚。
-
-### 诊断
-
-`doctor`（无参数）：当前后端、级联是否已降级（及原因）、token 到期时间、当前 `x-ratelimit-remaining` / 重置窗口 /
-轮换次数、写操作就绪情况（只报告哪些环境变量已设置，从不报告取值）、安全模式、缓存与请求统计。
+- **写操作**（发帖、回复、编辑、删除）和**账号工具**（自己的资料、收藏、动态）——它们需要用户身份，见*风险提示*。
+- **投票和私信**（Responsible Builder Policy）。
+- **展开 `more` 桩**（匿名 token 访问 `/api/morechildren` → 403）和 **link flair 模板**（匿名 token 访问
+  `/r/<sub>/api/link_flair_v2` → `USER_REQUIRED`）。不会改走其他接口来绕过。
 
 ## 开发
 
@@ -150,7 +122,7 @@ client id。开启了两步验证的账号无法使用 password grant。
 npm run build      # tsup -> dist/cli.js
 npm run typecheck  # tsc --noEmit（strict）
 npm test           # vitest 单元测试，不访问网络
-npm run smoke      # 针对真实 Reddit 的实网测试（需要网络）
+npm run smoke      # 针对真实 Reddit 对全部 12 个工具做实网测试（需要网络）
 npm run wire       # 启动 dist/cli.js，检查 stdio 与 HTTP 的协议交互（doctor 会访问网络）
 ```
 

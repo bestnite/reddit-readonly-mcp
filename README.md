@@ -7,18 +7,24 @@ Reddit data from a datacenter / VPS IP without any Reddit API credentials**. It 
 application-only token the same way Reddit's official Android app does (the technique used by
 [redlib](https://github.com/redlib-org/redlib), MIT) and talks to `oauth.reddit.com`.
 
-The tool names and semantics follow [jordanburke/reddit-mcp-server](https://github.com/jordanburke/reddit-mcp-server),
-so prompts written for one work with the other. Optional write tools are available when you supply your own
-registered Reddit app and account.
+**The server is read-only.** It exposes twelve tools that read public posts, comments, users and subreddits. There
+are no tools that post, reply, edit, delete, vote, send messages or read account data, and it never asks for Reddit
+credentials. The read tools' names and semantics follow
+[jordanburke/reddit-mcp-server](https://github.com/jordanburke/reddit-mcp-server), so read-only prompts written for one
+work with the other.
 
 ## ⚠️ Risks — read this first
 
+- **This server is read-only by design.** Write tools were deliberately removed. Posting, replying and voting need a
+  user-context token, which would mean either a registered Reddit app (self-service app creation closed in
+  November 2025; approval is now required) or handing your Reddit account credentials to this tool. Neither is in
+  scope, so no code path accepts a Reddit username, password or app secret.
 - **The client id `ohXpoqrZYub1kg` is a public constant of Reddit's Android app.** Impersonating the official
-  Android client conflicts with Reddit's Responsible Builder Policy, and Reddit can revoke or change this id at any time. When it breaks, override it with `REDDIT_MOBILE_CLIENT_ID`,
-  or use a registered app.
-- **The spoofed identity is used for the read path of public data only.** It is never used for write operations or
-  account actions; the code refuses to combine the Android client id with a username/password. Writes go only through
-  your own `REDDIT_CLIENT_ID` / `REDDIT_CLIENT_SECRET` + `REDDIT_USERNAME` / `REDDIT_PASSWORD`.
+  Android client conflicts with Reddit's Responsible Builder Policy, and Reddit can revoke or change this id at any
+  time. When it breaks, override it with `REDDIT_MOBILE_CLIENT_ID`; meanwhile the cascade falls back to RSS for the
+  two RSS-capable tools.
+- **The spoofed identity only ever reads public data.** It yields an anonymous, application-only token; nothing the
+  server does acts on behalf of a Reddit account.
 - **No uptime or correctness guarantee.** This is an unofficial client hitting undocumented endpoints; any of them can
   change or disappear without notice.
 
@@ -77,23 +83,19 @@ Details:
   retried once.
 - After degrading, the server re-tries the better backends (mobile, then installed) every 30 minutes and switches back
   when one works.
-- Tokens, `x-reddit-loid`, `x-reddit-session` and credentials are never logged or returned (logs and tool output are
-  additionally passed through a redaction filter).
+- Tokens, `x-reddit-loid` and `x-reddit-session` are never logged or returned (logs and tool output are additionally
+  passed through a redaction filter).
 - `REDDIT_AUTH_MODE=mobile|installed|rss` pins one backend and disables the cascade.
 
 ## Configuration
 
-All environment variables are optional.
+All environment variables are optional. There are no credential variables: Reddit app ids / secrets and account
+usernames / passwords are not read.
 
 | Variable | Default | Meaning |
 |---|---|---|
 | `REDDIT_AUTH_MODE` | `auto` | `auto` / `mobile` / `installed` / `rss` |
 | `REDDIT_MOBILE_CLIENT_ID` | `ohXpoqrZYub1kg` | Android client id (override point if it gets revoked) |
-| `REDDIT_CLIENT_ID` / `REDDIT_CLIENT_SECRET` | – | Your registered Reddit app ("script" type), required for write ops |
-| `REDDIT_USERNAME` / `REDDIT_PASSWORD` | – | Account, required for write ops |
-| `REDDIT_SAFE_MODE` | `standard` | `off` / `standard` / `strict` |
-| `REDDIT_BOT_DISCLOSURE` | `off` | `auto` / `off` |
-| `REDDIT_BOT_FOOTER` | built-in | Custom footer text used when disclosure is `auto` |
 | `REDDIT_CACHE` | `on` | In-memory read cache `on` / `off` |
 | `REDDIT_CACHE_MAX_MB` | `50` | LRU cap |
 | `REDDIT_MAX_RETRIES` | `3` | Retries on 429 honouring `Retry-After` |
@@ -102,11 +104,10 @@ All environment variables are optional.
 
 ## Tools
 
-Listing tools take `limit` and (where Reddit supports it) `after`, and return `{"data": [...], "after": cursor|null}`
-with trimmed fields (id, fullname, title, author, subreddit, score, num_comments, ISO `created_utc`, permalink, url,
-truncated selftext/body) — never the raw Reddit JSON.
-
-### Read (anonymous)
+Exactly twelve tools, all read-only and anonymous (annotated `readOnlyHint: true`). Listing tools take `limit` and
+(where Reddit supports it) `after`, and return `{"data": [...], "after": cursor|null}` with trimmed fields (id,
+fullname, title, author, subreddit, score, num_comments, ISO `created_utc`, permalink, url, truncated selftext/body) —
+never the raw Reddit JSON.
 
 | Tool | Notes |
 |---|---|
@@ -114,47 +115,21 @@ truncated selftext/body) — never the raw Reddit JSON.
 | `get_top_posts` | `subreddit?`, `time_filter` (default week). **Works over RSS.** |
 | `browse_subreddit` | `sort`: hot/new/top/rising/controversial, `time_filter` for top/controversial. **Works over RSS** (except controversial). |
 | `search_reddit` | `query` (alias `q`), optional `subreddit`, `sort`, `time_filter`, `type` (link/sr/user) |
+| `get_post_comments` | `limit`, `depth`, `sort`; nested replies + `more` stubs. The `more` stubs **cannot be expanded** by this server: Reddit answers `/api/morechildren` with HTTP 403 for anonymous tokens. Request a larger `limit` / `depth` instead. |
 | `get_user_info` | Public profile |
 | `get_user_posts` / `get_user_comments` | `sort`, `time_filter`, pagination |
 | `get_subreddit_info` | Metadata and sidebar |
 | `get_subreddit_rules` | Posting rules |
 | `get_trending_subreddits` | Reddit's `/subreddits/popular` |
-| `get_post_comments` | `limit`, `depth`, `sort`; nested replies + `more` stubs |
-| `get_more_comments` | Expands `more` stubs via `/api/morechildren`. Reddit currently answers this with **403 for anonymous tokens**; with user credentials configured the same endpoint is retried with the user token. |
-| `get_post_flairs` | Reddit requires a logged-in user (`USER_REQUIRED`); uses the user token when configured, otherwise returns a clean error. |
+| `doctor` | Diagnostics, no arguments: active backend, whether the cascade degraded (and why), token expiry, current `x-ratelimit-remaining` / reset window / rollovers, cache and request stats. Call it first when other tools fail. |
 
-### Account (user credentials required)
+Not provided, by design:
 
-`get_me`, `get_my_overview`, `get_my_saved` — return a clear error naming the missing variables when credentials are
-absent.
-
-### Write (user credentials required)
-
-`create_post` (text/link, optional flair), `reply_to_post`, `edit_post`, `edit_comment`, `delete_post`,
-`delete_comment` (deletes are **permanent**). Every write needs all four of `REDDIT_CLIENT_ID`,
-`REDDIT_CLIENT_SECRET`, `REDDIT_USERNAME`, `REDDIT_PASSWORD`; the password grant is requested with *your* app, never
-with the Android client id. Accounts with 2FA cannot use the password grant.
-
-There are deliberately **no voting or private-messaging tools** (Responsible Builder Policy).
-
-#### Safe mode
-
-| Mode | Min delay between writes | Duplicate / cross-subreddit check | History | Writes per hour |
-|---|---|---|---|---|
-| `off` | – | – | – | unlimited |
-| `standard` (default) | 2 s | yes | last 10 | 30 |
-| `strict` | 5 s | yes | last 20 | 10 |
-
-Identical content (case/whitespace-insensitive) posted again via `create_post` / `reply_to_post` is rejected; the
-same content sent to a different subreddit is rejected as cross-posting. Edits and deletes only get the delay and the
-hourly cap (repeating an edit is idempotent). Writes are serialised. With `REDDIT_BOT_DISCLOSURE=auto` a footer is appended
-to text posts, replies and edits.
-
-### Diagnostics
-
-`doctor` (no arguments): active backend, whether the cascade degraded (and why), token expiry, current
-`x-ratelimit-remaining` / reset window / rollovers, write readiness (which env vars are set — never their values),
-safe mode, cache and request stats.
+- **Writes** (posting, replying, editing, deleting) and **account tools** (your profile, saved items, overview) —
+  they need a user identity; see *Risks*.
+- **Voting and private messaging** (Responsible Builder Policy).
+- **Expanding `more` stubs** (`/api/morechildren` → 403 for anonymous tokens) and **link flair templates**
+  (`/r/<sub>/api/link_flair_v2` → `USER_REQUIRED` for anonymous tokens). They are not routed through other endpoints.
 
 ## Development
 
@@ -162,7 +137,7 @@ safe mode, cache and request stats.
 npm run build      # tsup -> dist/cli.js
 npm run typecheck  # tsc --noEmit (strict)
 npm test           # vitest unit tests, no network
-npm run smoke      # LIVE test against real Reddit (network)
+npm run smoke      # LIVE test of all 12 tools against real Reddit (network)
 npm run wire       # starts dist/cli.js and checks the stdio + HTTP protocol exchange (network for doctor)
 ```
 

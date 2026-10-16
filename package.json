@@ -1,0 +1,41 @@
+{
+  "name": "reddit-mcp",
+  "version": "0.1.0",
+  "description": "Reddit MCP server that reads public data from datacenter IPs without Reddit app credentials (Android client token), with optional credentialed write tools.",
+  "type": "module",
+  "private": true,
+  "license": "MIT",
+  "bin": {
+    "reddit-mcp": "dist/cli.js"
+  },
+  "files": [
+    "dist/",
+    "README.md",
+    "README.zh-CN.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "smoke": "tsx scripts/smoke.ts",
+    "wire": "tsx scripts/wire-check.ts",
+    "start": "node dist/cli.js",
+    "prepare": "tsup"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.1",
+    "fast-xml-parser": "^5.11.2",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "tsup": "^9.0.0",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3",
+    "vitest": "^5.0.5"
+  }
+}

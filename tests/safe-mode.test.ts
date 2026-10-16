@@ -71,6 +71,12 @@ describe("safe mode", () => {
     expect(results.map((r) => r.status)).toEqual(["fulfilled", "rejected"]);
   });
 
+  it("writes without content (edits, deletes) skip the duplicate check", async () => {
+    const { sm } = safe("standard");
+    await sm.run({ action: "edit_post" }, ok);
+    await expect(sm.run({ action: "edit_post" }, ok)).resolves.toBe("done");
+  });
+
   it("off mode applies no guards", async () => {
     const { sm, sleeps } = safe("off");
     await sm.run({ action: "w", content: "x", subreddit: "a" }, ok);

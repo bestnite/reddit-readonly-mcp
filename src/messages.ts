@@ -81,8 +81,8 @@ export const TOOL_DESCRIPTIONS = {
   get_my_saved: `Posts and comments you have saved. ${CREDS_NOTE} ${LISTING_NOTE}`,
   create_post: `Publish a new text or link post. Mutating and NOT idempotent: every call creates another public post. ${CREDS_NOTE} Check get_subreddit_rules (and get_post_flairs if flair is required) first. Subject to safe mode (write delay, duplicate and cross-subreddit duplicate rejection) and optional bot disclosure footer.`,
   reply_to_post: `Post a public comment under a post (t3_) or reply to a comment (t1_). Mutating and NOT idempotent. ${CREDS_NOTE} Subject to safe mode and optional bot disclosure footer.`,
-  edit_post: `Replace the body of one of your own text posts (titles and link posts cannot be edited). ${CREDS_NOTE} Subject to safe mode.`,
-  edit_comment: `Replace the text of one of your own comments. ${CREDS_NOTE} Subject to safe mode.`,
+  edit_post: `Replace the body of one of your own text posts (titles and link posts cannot be edited). ${CREDS_NOTE} Idempotent: repeating the same edit is allowed. Subject to the safe-mode write delay and hourly cap, and the optional bot disclosure footer.`,
+  edit_comment: `Replace the text of one of your own comments. ${CREDS_NOTE} Idempotent: repeating the same edit is allowed. Subject to the safe-mode write delay and hourly cap, and the optional bot disclosure footer.`,
   delete_post: `PERMANENTLY delete one of your own posts. This cannot be undone. ${CREDS_NOTE} Subject to safe mode write delay.`,
   delete_comment: `PERMANENTLY delete one of your own comments. This cannot be undone. ${CREDS_NOTE} Subject to safe mode write delay.`,
   doctor:

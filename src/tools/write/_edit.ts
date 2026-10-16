@@ -7,7 +7,8 @@ export async function editUserText(ctx: AppContext, tool: string, fullname: stri
   const res = await performWrite(
     ctx,
     tool,
-    { action: tool, content: newText },
+    // 编辑不做重复检测：同一文本重复编辑是幂等的，改回旧文本也是正当操作；仍受写入间隔与每小时上限约束
+    { action: tool },
     "/api/editusertext",
     { thing_id: fullname, text: ctx.disclosure.apply(newText) },
   );

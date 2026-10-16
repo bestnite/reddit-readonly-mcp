@@ -123,6 +123,21 @@ describe("write tools with credentials", () => {
     expect(new URLSearchParams(req.body).get("text")).toBe("hi");
   });
 
+  it("edit_comment can repeat the same edit (idempotent)", async () => {
+    const { call } = await connect({ ...WRITE_ENV, REDDIT_SAFE_MODE: "standard" }, handler);
+    const a = await call("edit_comment", { thing_id: "t1_c9", new_text: "same text" });
+    const b = await call("edit_comment", { thing_id: "t1_c9", new_text: "same text" });
+    expect([a.isError, b.isError]).toEqual([false, false]);
+  });
+
+  it("does not redact Reddit content that happens to contain the account password", async () => {
+    const { call } = await connect({ ...WRITE_ENV, REDDIT_PASSWORD: "monkey123" }, (c) =>
+      isTokenUrl(c.url) ? tokenResponse() : json(listing([rawPost("a", { title: "monkey123 is a bad password" })])),
+    );
+    const r = await call("browse_subreddit", { subreddit: "LocalLLaMA" });
+    expect(r.json.data[0].title).toBe("monkey123 is a bad password");
+  });
+
   it("delete_post posts the fullname to /api/del", async () => {
     const { call, calls } = await connect({ ...WRITE_ENV, REDDIT_SAFE_MODE: "off" }, (c) =>
       isTokenUrl(c.url) ? json({ access_token: "user-token-YYYYYYYY", expires_in: 3600 }) : json({}),

@@ -1,6 +1,9 @@
 // 协议层检查：启动构建产物 dist/cli.js，
-//   1) stdio：发送 initialize / initialized / tools/list / tools/call(doctor)，确认 stdout 每一行都是 JSON-RPC 消息
-//   2) HTTP：GET /health，POST /mcp initialize（拿到会话 id）→ tools/list → tools/call(doctor)，并校验 Host 头保护
+//   1) stdio：发送 initialize / initialized / tools/list / tools/call(doctor) / tools/call(已删除的 create_post)，
+//      确认 stdout 每一行都是 JSON-RPC 消息
+//   2) HTTP：GET /health，POST /mcp initialize（拿到会话 id）→ tools/list → tools/call(doctor) → tools/call(create_post)，
+//      并校验 Host 头保护
+// 服务器只读：tools/list 必须恰好 12 个工具，且不含任何已删除的写工具 / 账号工具
 // 用法：npm run build && npm run wire
 
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
@@ -23,6 +26,25 @@ const INIT = {
 const INITIALIZED = { jsonrpc: "2.0", method: "notifications/initialized" };
 const LIST = { jsonrpc: "2.0", id: 2, method: "tools/list", params: {} };
 const DOCTOR = { jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "doctor", arguments: {} } };
+const REMOVED_CALL = { jsonrpc: "2.0", id: 4, method: "tools/call", params: { name: "create_post", arguments: { subreddit: "test", title: "t", content: "c" } } };
+
+const EXPECTED_TOOL_COUNT = 12;
+const REMOVED_TOOLS = [
+  "create_post", "reply_to_post", "edit_post", "edit_comment", "delete_post", "delete_comment",
+  "get_me", "get_my_overview", "get_my_saved", "get_post_flairs", "get_more_comments",
+];
+
+function checkList(label: string, names: string[]): void {
+  const leaked = names.filter((n) => REMOVED_TOOLS.includes(n));
+  report(names.length === EXPECTED_TOOL_COUNT && names.includes("doctor") && leaked.length === 0, label, `${names.length} tools, removed names present: ${leaked.length ? leaked.join(", ") : "none"}`);
+}
+
+// 已删除的工具：服务器必须以"未知工具"拒绝，而不是执行
+function checkRemovedCall(label: string, m: any): void {
+  const text = JSON.stringify(m?.error ?? m?.result ?? null);
+  const unknown = (m?.error !== undefined || m?.result?.isError === true) && /not found/i.test(text);
+  report(unknown, label, text);
+}
 
 async function stdioCheck(): Promise<void> {
   const child = spawn(process.execPath, [CLI], { stdio: ["pipe", "pipe", "pipe"], env: { ...process.env } });
@@ -54,12 +76,13 @@ async function stdioCheck(): Promise<void> {
     send(INITIALIZED);
     send(LIST);
     const list = await waitFor(2);
-    const names: string[] = (list.result?.tools ?? []).map((t: { name: string }) => t.name);
-    report(names.length === 23 && names.includes("doctor"), "stdio tools/list", `${names.length} tools`);
+    checkList("stdio tools/list", (list.result?.tools ?? []).map((t: { name: string }) => t.name));
     send(DOCTOR);
     const doc = await waitFor(3);
     const body = JSON.parse(doc.result?.content?.[0]?.text ?? "{}");
-    report(doc.result?.isError !== true && !!body.read_backend, "stdio tools/call doctor", `active_backend=${body.read_backend?.active_backend} token_check=${JSON.stringify(body.read_backend?.token_check)}`);
+    report(doc.result?.isError !== true && !!body.read_backend && !("write" in body), "stdio tools/call doctor", `active_backend=${body.read_backend?.active_backend} token_check=${JSON.stringify(body.read_backend?.token_check)} keys=${Object.keys(body).join(",")}`);
+    send(REMOVED_CALL);
+    checkRemovedCall("stdio tools/call create_post (removed)", await waitFor(4));
   } catch (err) {
     report(false, "stdio exchange", String(err));
   }
@@ -132,12 +155,15 @@ async function httpCheck(): Promise<void> {
 
     const listRes = await fetch(`${base}/mcp`, { method: "POST", headers: sh, body: JSON.stringify(LIST) });
     const list = await readRpc(listRes);
-    report((list?.result?.tools ?? []).length === 23, "http tools/list", `${(list?.result?.tools ?? []).length} tools`);
+    checkList("http tools/list", (list?.result?.tools ?? []).map((t: { name: string }) => t.name));
 
     const docRes = await fetch(`${base}/mcp`, { method: "POST", headers: sh, body: JSON.stringify(DOCTOR) });
     const doc = await readRpc(docRes);
     const body = JSON.parse(doc?.result?.content?.[0]?.text ?? "{}");
-    report(doc?.result?.isError !== true && !!body.read_backend, "http tools/call doctor", `active_backend=${body.read_backend?.active_backend}`);
+    report(doc?.result?.isError !== true && !!body.read_backend && !("write" in body), "http tools/call doctor", `active_backend=${body.read_backend?.active_backend}`);
+
+    const rmRes = await fetch(`${base}/mcp`, { method: "POST", headers: sh, body: JSON.stringify(REMOVED_CALL) });
+    checkRemovedCall("http tools/call create_post (removed)", await readRpc(rmRes));
 
     const noSession = await fetch(`${base}/mcp`, { method: "POST", headers, body: JSON.stringify(LIST) });
     await noSession.text();

@@ -1,5 +1,5 @@
 // 实网冒烟测试：通过内存 MCP 传输调用真实工具，访问真实 Reddit。
-// 每个调用打印一行 PASS/FAIL，任何 FAIL 时以非零退出码结束。
+// 覆盖全部 12 个（只读）工具；每个调用打印一行 PASS/FAIL，任何 FAIL 时以非零退出码结束。
 // 用法：npm run smoke
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -60,22 +60,27 @@ function ok(isError: boolean, text: string): void {
 }
 
 async function main(): Promise<void> {
-  // 冒烟测试只验证匿名读路径，不带任何写凭据
-  const baseEnv: Record<string, string | undefined> = {
-    ...process.env,
-    REDDIT_CLIENT_ID: undefined,
-    REDDIT_CLIENT_SECRET: undefined,
-    REDDIT_USERNAME: undefined,
-    REDDIT_PASSWORD: undefined,
-  };
+  const baseEnv: Record<string, string | undefined> = { ...process.env };
   const api = await connect({ ...baseEnv, REDDIT_AUTH_MODE: process.env.REDDIT_AUTH_MODE ?? "auto" });
+
+  // 服务器只读：工具列表必须恰好是 12 个只读工具
+  {
+    const started = Date.now();
+    const { tools } = await api.listTools();
+    const names = tools.map((t) => t.name).sort();
+    const removed = ["create_post", "reply_to_post", "edit_post", "edit_comment", "delete_post", "delete_comment", "get_me", "get_my_overview", "get_my_saved", "get_post_flairs", "get_more_comments"];
+    const okList = names.length === 12 && tools.every((t) => t.annotations?.readOnlyHint === true) && !removed.some((n) => names.includes(n));
+    if (!okList) failures++;
+    console.log(`${okList ? "PASS" : "FAIL"}  tools/list  (${Date.now() - started} ms)  ${names.length} tools, all readOnlyHint, none of the removed names`);
+  }
 
   await call(api, "doctor", "doctor", {}, (r, isError, text) => {
     ok(isError, text);
     const rb = r.read_backend;
     assert(rb.token_check.ok, `token check failed: ${rb.token_check.error}`);
     assert(rb.active_backend === "mobile" || rb.active_backend === "installed", `backend is ${rb.active_backend}`);
-    return `backend=${rb.active_backend} degraded=${rb.degraded} token_expires_in_s=${rb.token?.expires_in_s} write_ready=${r.write.ready}`;
+    assert(!("write" in r) && !("safe_mode" in r) && !("bot_disclosure" in r), "doctor still reports write fields");
+    return `backend=${rb.active_backend} degraded=${rb.degraded} token_expires_in_s=${rb.token?.expires_in_s}`;
   });
 
   const browse = await call(
@@ -92,6 +97,19 @@ async function main(): Promise<void> {
         assert(/^\d{4}-\d\d-\d\dT/.test(p.created_utc), "created_utc not ISO");
       }
       return `${r.data.length} posts, after=${r.after}, first="${String(r.data[0].title).slice(0, 60)}"`;
+    },
+  );
+
+  await call(
+    api,
+    "get_top_posts r/LocalLLaMA --time_filter week --limit 3",
+    "get_top_posts",
+    { subreddit: "LocalLLaMA", time_filter: "week", limit: 3 },
+    (r, isError, text) => {
+      ok(isError, text);
+      assert(Array.isArray(r.data) && r.data.length >= 1 && r.data.length <= 3, `got ${r.data?.length} posts`);
+      assert(typeof r.data[0].score === "number", "post missing score");
+      return `${r.data.length} posts, top score=${r.data[0].score}, first="${String(r.data[0].title).slice(0, 50)}"`;
     },
   );
 
@@ -117,6 +135,17 @@ async function main(): Promise<void> {
   if (target) {
     await call(
       api,
+      `get_reddit_post ${target.id}`,
+      "get_reddit_post",
+      { post_id: target.fullname },
+      (r, isError, text) => {
+        ok(isError, text);
+        assert(r.id === target.id && r.title === target.title, "post id/title mismatch");
+        return `id=${r.id} author=${r.author} score=${r.score} num_comments=${r.num_comments}`;
+      },
+    );
+    await call(
+      api,
       `get_post_comments ${target.id} --limit 20 --depth 2`,
       "get_post_comments",
       { post_id: target.id, limit: 20, depth: 2 },
@@ -129,7 +158,7 @@ async function main(): Promise<void> {
     );
   } else {
     failures++;
-    console.log("FAIL  get_post_comments  no post available from browse_subreddit");
+    console.log("FAIL  get_reddit_post / get_post_comments  no post available from browse_subreddit");
   }
 
   await call(api, "get_user_info spez", "get_user_info", { username: "spez" }, (r, isError, text) => {
@@ -137,6 +166,27 @@ async function main(): Promise<void> {
     assert(r.name?.toLowerCase() === "spez", `name=${r.name}`);
     assert(typeof r.total_karma === "number", "no karma");
     return `name=${r.name} created=${r.created_utc} total_karma=${r.total_karma} is_employee=${r.is_employee}`;
+  });
+
+  await call(api, "get_user_posts spez --limit 3", "get_user_posts", { username: "spez", limit: 3 }, (r, isError, text) => {
+    ok(isError, text);
+    assert(Array.isArray(r.data) && r.data.length >= 1, "no posts");
+    assert(r.data.every((p: Json) => p.author?.toLowerCase() === "spez"), "post by someone else");
+    return `${r.data.length} posts, after=${r.after ? "yes" : "null"}, first="${String(r.data[0].title).slice(0, 50)}"`;
+  });
+
+  await call(api, "get_user_comments spez --limit 3", "get_user_comments", { username: "spez", limit: 3 }, (r, isError, text) => {
+    ok(isError, text);
+    assert(Array.isArray(r.data) && r.data.length >= 1, "no comments");
+    assert(r.data.every((c: Json) => c.fullname?.startsWith("t1_")), "non-comment in result");
+    return `${r.data.length} comments, first on "${String(r.data[0].link_title ?? "").slice(0, 50)}"`;
+  });
+
+  await call(api, "get_subreddit_info LocalLLaMA", "get_subreddit_info", { subreddit_name: "LocalLLaMA" }, (r, isError, text) => {
+    ok(isError, text);
+    assert(String(r.name).toLowerCase() === "localllama", `name=${r.name}`);
+    assert(typeof r.subscribers === "number", "no subscriber count");
+    return `name=${r.name} subscribers=${r.subscribers} created=${r.created_utc}`;
   });
 
   await call(
@@ -150,6 +200,12 @@ async function main(): Promise<void> {
       return `${r.data.length} rules, first="${r.data[0].short_name}"`;
     },
   );
+
+  await call(api, "get_trending_subreddits --limit 5", "get_trending_subreddits", { limit: 5 }, (r, isError, text) => {
+    ok(isError, text);
+    assert(Array.isArray(r.data) && r.data.length >= 1 && r.data.length <= 5, `got ${r.data?.length}`);
+    return `${r.data.length} subreddits: ${r.data.map((s: Json) => s.name).join(", ")}`;
+  });
 
   await call(api, "doctor (after calls)", "doctor", {}, (r, isError, text) => {
     ok(isError, text);

@@ -66,6 +66,8 @@ npm run build && npm run wire   # protocol check of dist/cli.js over stdio and H
 npm run smoke                   # live, hits real Reddit; exercises all 12 tools, prints PASS/FAIL per call
 ```
 
-Commits use conventional prefixes (`feat:`, `fix:`, `test:`, `docs:`, `chore:`, `refactor:`). There is no remote;
-do not publish to npm. The npm package name and the executable are both `reddit-readonly-mcp` (free on npm, checked
-2026-10-16; the name `reddit-mcp` is taken by an unrelated npm package).
+Commits use conventional prefixes (`feat:`, `fix:`, `test:`, `docs:`, `chore:`, `refactor:`). The only
+remote is the owner's self-hosted Gitea (`origin`, `mygit:nite/reddit-readonly-mcp.git`); there is no
+upstream to sync with, and the package is not published to npm. The npm package name and the
+executable are both `reddit-readonly-mcp` (free on npm, checked 2026-10-16; the name `reddit-mcp` is
+taken by an unrelated npm package).

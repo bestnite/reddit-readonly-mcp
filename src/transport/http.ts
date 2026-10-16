@@ -15,6 +15,10 @@ export interface HttpOptions {
 }
 
 const MAX_BODY_BYTES = 4 * 1024 * 1024;
+// 客户端不发 DELETE 时，空闲超过该时长的会话会被回收
+const SESSION_IDLE_MS = 30 * 60_000;
+
+class BodyTooLargeError extends Error {}
 
 function isLoopback(host: string): boolean {
   return host === "127.0.0.1" || host === "localhost" || host === "::1" || host.startsWith("127.");
@@ -35,7 +39,7 @@ async function readBody(req: IncomingMessage): Promise<unknown> {
   for await (const chunk of req) {
     const buf = chunk as Buffer;
     size += buf.length;
-    if (size > MAX_BODY_BYTES) throw new Error("request body too large");
+    if (size > MAX_BODY_BYTES) throw new BodyTooLargeError("request body too large");
     chunks.push(buf);
   }
   const text = Buffer.concat(chunks).toString("utf8");
@@ -44,7 +48,21 @@ async function readBody(req: IncomingMessage): Promise<unknown> {
 
 export async function startHttp(ctx: AppContext, opts: HttpOptions): Promise<Server> {
   const transports = new Map<string, StreamableHTTPServerTransport>();
+  const lastSeen = new Map<string, number>();
   const loopback = isLoopback(opts.host);
+
+  const sweep = setInterval(() => {
+    const cutoff = Date.now() - SESSION_IDLE_MS;
+    for (const [id, t] of transports) {
+      if ((lastSeen.get(id) ?? 0) < cutoff) {
+        ctx.logger.info(`Closing idle MCP session ${id.slice(0, 8)}…`);
+        transports.delete(id);
+        lastSeen.delete(id);
+        void t.close().catch(() => undefined);
+      }
+    }
+  }, 60_000);
+  sweep.unref();
 
   const hostAllowed = (req: IncomingMessage): boolean => {
     if (!loopback) return true;
@@ -82,13 +100,15 @@ export async function startHttp(ctx: AppContext, opts: HttpOptions): Promise<Ser
 
       const sessionId = req.headers["mcp-session-id"];
       const sid = Array.isArray(sessionId) ? sessionId[0] : sessionId;
+      if (sid && transports.has(sid)) lastSeen.set(sid, Date.now());
 
       if (req.method === "POST") {
         let body: unknown;
         try {
           body = await readBody(req);
-        } catch {
-          jsonRpcError(res, 400, -32700, "Parse error");
+        } catch (err) {
+          if (err instanceof BodyTooLargeError) jsonRpcError(res, 413, -32600, "Request body too large");
+          else jsonRpcError(res, 400, -32700, "Parse error");
           return;
         }
         let transport = sid ? transports.get(sid) : undefined;
@@ -101,10 +121,14 @@ export async function startHttp(ctx: AppContext, opts: HttpOptions): Promise<Ser
             sessionIdGenerator: () => randomUUID(),
             onsessioninitialized: (id) => {
               transports.set(id, created);
+              lastSeen.set(id, Date.now());
             },
           });
           created.onclose = () => {
-            if (created.sessionId) transports.delete(created.sessionId);
+            if (created.sessionId) {
+              transports.delete(created.sessionId);
+              lastSeen.delete(created.sessionId);
+            }
           };
           await buildServer(ctx).connect(created);
           transport = created;
@@ -140,6 +164,7 @@ export async function startHttp(ctx: AppContext, opts: HttpOptions): Promise<Ser
   if (!loopback) ctx.logger.warn(`HTTP transport bound to non-loopback address ${opts.host}; there is no authentication in front of /mcp`);
 
   const shutdown = () => {
+    clearInterval(sweep);
     for (const t of transports.values()) void t.close().catch(() => undefined);
     server.close(() => process.exit(0));
     setTimeout(() => process.exit(0), 2000).unref();

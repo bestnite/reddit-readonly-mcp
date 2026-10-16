@@ -38,6 +38,9 @@ const parser = new XMLParser({
   isArray: (name) => name === "entry" || name === "link" || name === "category",
   processEntities: true,
   htmlEntities: true,
+  // 不要把 "007"、"1e3" 这类标题/用户名转换成数字
+  parseTagValue: false,
+  parseAttributeValue: false,
 });
 
 const ENTITY: Record<string, string> = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " ", "#39": "'" };

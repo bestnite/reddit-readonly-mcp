@@ -35,6 +35,15 @@ describe("RSS backend", () => {
     expect(rssUrl(undefined, "hot")).toBe("https://www.reddit.com/hot.rss");
   });
 
+  it("keeps numeric-looking titles and usernames as strings", () => {
+    const xml = fixture
+      .replace(/<title>Introducing[^<]*<\/title>/, "<title>007</title>")
+      .replace("<name>/u/AIatMeta</name>", "<name>/u/0123</name>");
+    const p = parseRssFeed(xml)[0]!;
+    expect(p.title).toBe("007");
+    expect(p.author).toBe("0123");
+  });
+
   it("decodes HTML entities", () => {
     expect(decodeEntities("a &amp; b &#39;c&#39; &#x27;d&#x27; &quot;e&quot;")).toBe("a & b 'c' 'd' \"e\"");
   });

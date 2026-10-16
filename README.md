@@ -25,16 +25,26 @@ By emulating Reddit's official Android application token exchange (based on the 
 
 - [Node.js](https://nodejs.org/) $\ge 20$
 
-### 1. Build from Source
+### 1. Run it
+
+Published on npm as **`reddit-readonly-mcp`** (v0.1.0):
 
 ```bash
-git clone https://github.com/.../reddit-readonly-mcp.git # or local folder
-cd reddit-readonly-mcp
-npm install
-npm run build
+npx -y reddit-readonly-mcp          # stdio, what MCP clients launch
 ```
 
-The compiled entry point is `dist/cli.js`.
+Or install it globally:
+
+```bash
+npm i -g reddit-readonly-mcp
+reddit-readonly-mcp
+```
+
+Or run the latest `main` from the Gitea repository:
+
+```bash
+npx --allow-git=all -y "git+https://git.nite07.com/nite/reddit-readonly-mcp.git"
+```
 
 ### 2. Configure Your MCP Client
 
@@ -46,8 +56,8 @@ Add this to your MCP configuration file (e.g. `claude_desktop_config.json` or Cu
 {
   "mcpServers": {
     "reddit": {
-      "command": "node",
-      "args": ["/ABSOLUTE/PATH/TO/reddit-readonly-mcp/dist/cli.js"]
+      "command": "npx",
+      "args": ["-y", "reddit-readonly-mcp"]
     }
   }
 }
@@ -58,9 +68,10 @@ Add this to your MCP configuration file (e.g. `claude_desktop_config.json` or Cu
 ```yaml
 mcp_servers:
   reddit:
-    command: "node"
+    command: npx
     args:
-      - "/ABSOLUTE/PATH/TO/reddit-readonly-mcp/dist/cli.js"
+      - "-y"
+      - reddit-readonly-mcp
 ```
 
 #### Streamable HTTP Mode
@@ -68,12 +79,23 @@ mcp_servers:
 For Docker, MetaMCP, or remote gateway deployments:
 
 ```bash
-node dist/cli.js --http --port 3000 --host 127.0.0.1
+npx -y reddit-readonly-mcp --http --port 3000 --host 127.0.0.1
 ```
 
 - Endpoint: `http://127.0.0.1:3000/mcp`
 - Health check: `GET http://127.0.0.1:3000/health`
 - *Note:* The HTTP server binds to `127.0.0.1` by default and enforces Host-header validation to prevent DNS rebinding. It has no built-in authentication; place it behind a secure proxy if exposing externally.
+
+### 3. From Source (development)
+
+```bash
+git clone https://git.nite07.com/nite/reddit-readonly-mcp.git
+cd reddit-readonly-mcp
+npm install && npm run build
+node dist/cli.js
+```
+
+The compiled entry point is `dist/cli.js`.
 
 ---
 

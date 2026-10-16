@@ -25,16 +25,26 @@
 
 - [Node.js](https://nodejs.org/) $\ge 20$
 
-### 1. 构建项目
+### 1. 直接运行
+
+已发布到 npm：**`reddit-readonly-mcp`**（v0.1.0）：
 
 ```bash
-git clone https://github.com/.../reddit-readonly-mcp.git # 或本地代码目录
-cd reddit-readonly-mcp
-npm install
-npm run build
+npx -y reddit-readonly-mcp          # stdio，MCP 客户端启动的方式
 ```
 
-编译产物位于 `dist/cli.js`。
+或全局安装：
+
+```bash
+npm i -g reddit-readonly-mcp
+reddit-readonly-mcp
+```
+
+或直接跑 Gitea 仓库上的最新 `main`：
+
+```bash
+npx --allow-git=all -y "git+https://git.nite07.com/nite/reddit-readonly-mcp.git"
+```
 
 ### 2. 配置 MCP 客户端
 
@@ -46,8 +56,8 @@ npm run build
 {
   "mcpServers": {
     "reddit": {
-      "command": "node",
-      "args": ["/绝对路径/reddit-readonly-mcp/dist/cli.js"]
+      "command": "npx",
+      "args": ["-y", "reddit-readonly-mcp"]
     }
   }
 }
@@ -58,9 +68,10 @@ npm run build
 ```yaml
 mcp_servers:
   reddit:
-    command: "node"
+    command: npx
     args:
-      - "/绝对路径/reddit-readonly-mcp/dist/cli.js"
+      - "-y"
+      - reddit-readonly-mcp
 ```
 
 #### Streamable HTTP 模式
@@ -68,12 +79,23 @@ mcp_servers:
 适用于 Docker 容器部署、MetaMCP 或集中式 MCP 网关集成：
 
 ```bash
-node dist/cli.js --http --port 3000 --host 127.0.0.1
+npx -y reddit-readonly-mcp --http --port 3000 --host 127.0.0.1
 ```
 
 - MCP 服务端点：`http://127.0.0.1:3000/mcp`
 - 健康检查端点：`GET http://127.0.0.1:3000/health`
 - *说明：* HTTP 传输默认绑定到 `127.0.0.1`，并强制校验 Host 头以防范 DNS 重绑定攻击；服务端未设身份鉴权，若需暴露至外网请前置反向代理鉴权。
+
+### 3. 从源码运行（开发）
+
+```bash
+git clone https://git.nite07.com/nite/reddit-readonly-mcp.git
+cd reddit-readonly-mcp
+npm install && npm run build
+node dist/cli.js
+```
+
+编译产物位于 `dist/cli.js`。
 
 ---
 

@@ -7,7 +7,7 @@
 // 降级也无济于事（RSS 同样在 www.reddit.com），因此直接报错、不计数、不降级。
 //
 // 注意：这里拿到的永远是 application-only 的匿名 token，只用于读取公开数据。
-// 用户 token（写操作）在 user-token.ts，且必须使用用户自己注册的 app，绝不使用 Android client id。
+// 服务器只读，不存在用户 token：Android client id 永远不会与用户名/密码组合使用。
 
 import type { AuthMode } from "../config.js";
 import { registerSecret, unregisterSecret, silentLogger, type Logger } from "../logger.js";

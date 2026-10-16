@@ -1,27 +1,21 @@
-// 进程级共享状态：token、缓存、限流计数、安全模式在所有 MCP 会话之间共享。
+// 进程级共享状态：token、缓存、限流计数在所有 MCP 会话之间共享。
 
 import type { Config } from "./config.js";
 import { createLogger, type Logger } from "./logger.js";
 import { createAndroidDevice, getProcessDevice, type AndroidDevice } from "./auth/device.js";
 import { TokenManager } from "./auth/token-manager.js";
-import { UserTokenManager } from "./auth/user-token.js";
 import { ResponseCache } from "./client/cache.js";
 import { RedditClient } from "./client/reddit-client.js";
 import { RssClient } from "./client/rss.js";
-import { SafeMode } from "./write/safe-mode.js";
-import { BotDisclosure } from "./write/bot-disclosure.js";
 
 export interface AppContext {
   config: Config;
   logger: Logger;
   device: AndroidDevice;
   tokens: TokenManager;
-  userAuth: UserTokenManager;
   cache: ResponseCache;
   client: RedditClient;
   rss: RssClient;
-  safeMode: SafeMode;
-  disclosure: BotDisclosure;
   startedAt: number;
 }
 
@@ -52,10 +46,8 @@ export function createContext(config: Config, deps: ContextDeps = {}): AppContex
     logger,
     retryBackoffMs: deps.retryBackoffMs,
   });
-  const userAuth = new UserTokenManager({ config, fetch: deps.fetch, now, timeoutMs: config.timeoutMs, logger });
   const client = new RedditClient({
     tokens,
-    userAuth,
     cache,
     fetch: deps.fetch,
     logger,
@@ -72,7 +64,5 @@ export function createContext(config: Config, deps: ContextDeps = {}): AppContex
     timeoutMs: config.timeoutMs,
     sleep: deps.sleep,
   });
-  const safeMode = new SafeMode(config.safeMode, { now, sleep: deps.sleep, logger });
-  const disclosure = new BotDisclosure(config.botDisclosure, config.botFooter);
-  return { config, logger, device, tokens, userAuth, cache, client, rss, safeMode, disclosure, startedAt: now() };
+  return { config, logger, device, tokens, cache, client, rss, startedAt: now() };
 }

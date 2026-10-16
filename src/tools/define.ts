@@ -18,7 +18,6 @@ export interface ToolDef<S extends z.ZodRawShape = z.ZodRawShape> {
 }
 
 const READ: ToolAnnotations = { readOnlyHint: true, openWorldHint: true };
-const WRITE: ToolAnnotations = { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true };
 
 export function readTool<S extends z.ZodRawShape>(
   name: ToolName,
@@ -28,21 +27,4 @@ export function readTool<S extends z.ZodRawShape>(
   extra: Partial<Pick<ToolDef<S>, "rssCapable">> = {},
 ): ToolDef<S> {
   return { name, title, description: TOOL_DESCRIPTIONS[name], inputSchema, annotations: { ...READ, title }, handler, ...extra };
-}
-
-export function writeTool<S extends z.ZodRawShape>(
-  name: ToolName,
-  title: string,
-  inputSchema: S,
-  handler: ToolDef<S>["handler"],
-  annotations: Partial<ToolAnnotations> = {},
-): ToolDef<S> {
-  return {
-    name,
-    title,
-    description: TOOL_DESCRIPTIONS[name],
-    inputSchema,
-    annotations: { ...WRITE, title, ...annotations },
-    handler,
-  };
 }

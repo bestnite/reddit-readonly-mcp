@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parseArgs } from "../src/cli-args.js";
-import { loadConfig, missingWriteVars } from "../src/config.js";
+import { loadConfig } from "../src/config.js";
 import { createLogger, redact, registerSecret } from "../src/logger.js";
 
 describe("config", () => {
@@ -9,29 +9,24 @@ describe("config", () => {
     expect(config).toMatchObject({
       authMode: "auto",
       mobileClientId: "ohXpoqrZYub1kg",
-      safeMode: "standard",
-      botDisclosure: false,
       cacheEnabled: true,
       cacheMaxBytes: 50 * 1024 * 1024,
       maxRetries: 3,
       timeoutMs: 20000,
     });
     expect(problems).toEqual([]);
-    expect(missingWriteVars(config)).toEqual(["REDDIT_CLIENT_ID", "REDDIT_CLIENT_SECRET", "REDDIT_USERNAME", "REDDIT_PASSWORD"]);
   });
 
-  it("reads overrides and reports invalid values without echoing secrets", () => {
+  it("reads overrides and reports invalid values", () => {
     const { config, problems } = loadConfig({
       REDDIT_AUTH_MODE: "RSS",
       REDDIT_MOBILE_CLIENT_ID: "otherId",
-      REDDIT_SAFE_MODE: "paranoid",
+      REDDIT_CACHE: "maybe",
       REDDIT_CACHE_MAX_MB: "abc",
-      REDDIT_PASSWORD: "  spaced  ",
     });
     expect(config.authMode).toBe("rss");
     expect(config.mobileClientId).toBe("otherId");
-    expect(config.safeMode).toBe("standard");
-    expect(config.password).toBe("  spaced  ");
+    expect(config.cacheEnabled).toBe(true);
     expect(problems).toHaveLength(2);
   });
 });

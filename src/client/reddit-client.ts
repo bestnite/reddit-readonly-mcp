@@ -1,11 +1,9 @@
-// oauth.reddit.com 请求封装：
-//   - 匿名读：Android 设备头 + 匿名 token + loid/session，记录限流头，401 刷新重试一次，可缓存
-//   - 用户请求：用户 token + 自己的 UA（不带任何 Android 头），401 刷新重试一次，不缓存
-//   - 两者共用：超时、429 按 Retry-After 退避重试、3xx 不跟随
+// oauth.reddit.com 请求封装（只读）：
+//   - Android 设备头 + 匿名 token + loid/session，记录限流头，401 刷新重试一次，可缓存
+//   - 超时、首次 429 先轮换 token、之后按 Retry-After 退避重试、3xx 不跟随
 
 import { silentLogger, type Logger } from "../logger.js";
 import type { TokenManager } from "../auth/token-manager.js";
-import type { UserTokenManager } from "../auth/user-token.js";
 import type { ResponseCache } from "./cache.js";
 import {
   HttpError,
@@ -23,7 +21,6 @@ export type Query = Record<string, QueryValue>;
 
 export interface RedditClientOptions {
   tokens: TokenManager;
-  userAuth: UserTokenManager;
   cache: ResponseCache;
   fetch?: typeof fetch;
   logger?: Logger;
@@ -41,14 +38,6 @@ export interface ReadOptions {
   cacheTtlMs?: number;
 }
 
-export interface UserRequestOptions {
-  what: string;
-  tool: string;
-  method?: "GET" | "POST";
-  query?: Query;
-  form?: Query;
-}
-
 interface RawResult {
   status: number;
   headers: Headers;
@@ -64,18 +53,8 @@ export function buildUrl(path: string, query: Query = {}): string {
   return url.toString();
 }
 
-function toForm(form: Query): string {
-  const p = new URLSearchParams();
-  for (const [k, v] of Object.entries(form)) {
-    if (v === undefined || v === null) continue;
-    p.set(k, String(v));
-  }
-  return p.toString();
-}
-
 export class RedditClient {
   readonly tokens: TokenManager;
-  readonly userAuth: UserTokenManager;
   readonly cache: ResponseCache;
   private readonly fetchImpl: typeof fetch;
   private readonly logger: Logger;
@@ -87,7 +66,6 @@ export class RedditClient {
 
   constructor(o: RedditClientOptions) {
     this.tokens = o.tokens;
-    this.userAuth = o.userAuth;
     this.cache = o.cache;
     this.fetchImpl = o.fetch ?? ((...a) => fetch(...a));
     this.logger = o.logger ?? silentLogger;
@@ -140,32 +118,6 @@ export class RedditClient {
     const json = this.parse<T>(res, opts.what);
     if (ttl > 0) this.cache.set(url, json, res.text.length, ttl);
     return json;
-  }
-
-  // 需要用户 token 的请求（写操作、get_me 等）
-  async user<T>(path: string, opts: UserRequestOptions): Promise<T> {
-    const method = opts.method ?? "GET";
-    const url = buildUrl(path, { ...(opts.query ?? {}), raw_json: 1 });
-    const body = opts.form ? toForm({ ...opts.form, api_type: "json" }) : undefined;
-
-    const doSend = async () => {
-      const token = await this.userAuth.getToken(opts.tool);
-      const headers: Record<string, string> = {
-        Authorization: `Bearer ${token}`,
-        "User-Agent": this.userAuth.userAgent,
-        Accept: "application/json",
-      };
-      if (body !== undefined) headers["Content-Type"] = "application/x-www-form-urlencoded";
-      return this.send(url, { method, headers, body });
-    };
-
-    let res = await doSend();
-    if (res.status === 401) {
-      this.stats.unauthorizedRetries++;
-      this.userAuth.invalidate();
-      res = await doSend();
-    }
-    return this.parse<T>(res, opts.what);
   }
 
   // ---------------------------------------------------------------------------

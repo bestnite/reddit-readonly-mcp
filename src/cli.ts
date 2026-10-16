@@ -15,7 +15,8 @@ Usage:
                                    Streamable HTTP transport on /mcp (+ GET /health)
   reddit-mcp --help | --version
 
-Configuration is read from environment variables (REDDIT_AUTH_MODE, REDDIT_CLIENT_ID, ...); see README.md.
+Read-only by design: no Reddit credentials are used.
+Configuration is read from environment variables (REDDIT_AUTH_MODE, REDDIT_CACHE, ...); see README.md.
 `;
 
 async function main(): Promise<void> {
@@ -41,8 +42,7 @@ async function main(): Promise<void> {
   for (const p of problems) logger.warn(`Config: ${p}`);
   const ctx = createContext(config, { logger });
   logger.info(
-    `Starting ${PACKAGE_NAME} ${PACKAGE_VERSION} (auth mode: ${config.authMode}, safe mode: ${config.safeMode}, ` +
-      `write tools: ${ctx.userAuth.configured ? "configured" : "not configured"})`,
+    `Starting ${PACKAGE_NAME} ${PACKAGE_VERSION} (read-only, auth mode: ${config.authMode}, cache: ${config.cacheEnabled ? "on" : "off"})`,
   );
 
   if (args.http) await startHttp(ctx, { port: args.port, host: args.host });

@@ -47,22 +47,3 @@ export function normalizePostId(input: string): string {
   if (!/^[a-z0-9]{1,16}$/i.test(id)) throw new ToolInputError(E.invalidId(input, "post"));
   return id.toLowerCase();
 }
-
-export function normalizeCommentId(input: string): string {
-  const id = input.trim().replace(/^t1_/i, "");
-  if (!/^[a-z0-9]{1,16}$/i.test(id)) throw new ToolInputError(E.invalidId(input, "comment"));
-  return id.toLowerCase();
-}
-
-// 带前缀的 thing 全名；没有前缀时补上 defaultPrefix
-export function normalizeFullname(input: string, defaultPrefix: "t1" | "t3", allowed: Array<"t1" | "t3">): string {
-  const v = input.trim();
-  const m = /^(t[13])_([a-z0-9]{1,16})$/i.exec(v);
-  if (m?.[1] && m[2]) {
-    const prefix = m[1].toLowerCase() as "t1" | "t3";
-    if (!allowed.includes(prefix)) throw new ToolInputError(E.invalidId(input, allowed.join("/")));
-    return `${prefix}_${m[2].toLowerCase()}`;
-  }
-  const bare = defaultPrefix === "t3" ? normalizePostId(v) : normalizeCommentId(v);
-  return `${defaultPrefix}_${bare}`;
-}

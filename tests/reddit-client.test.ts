@@ -3,13 +3,6 @@ import { HttpError, RateLimitError, RedditApiError, RedirectError } from "../src
 import { retryAfterMs } from "../src/client/reddit-client.js";
 import { FIXED_UUID, isTokenUrl, json, listing, rawPost, testContext, text, tokenResponse } from "./helpers.js";
 
-const WRITE_ENV = {
-  REDDIT_CLIENT_ID: "myAppId123",
-  REDDIT_CLIENT_SECRET: "myAppSecret456",
-  REDDIT_USERNAME: "botuser",
-  REDDIT_PASSWORD: "hunter2-password",
-};
-
 describe("anonymous read requests", () => {
   it("sends Android headers, bearer token, loid/session and raw_json=1 to oauth.reddit.com", async () => {
     const { ctx, calls } = testContext({}, (c) =>
@@ -126,55 +119,6 @@ describe("anonymous read requests", () => {
     expect((api as RedditApiError).toolText()).toContain("logged-in user");
     const redir = await ctx.client.read("/r/doesnotexist/hot", {}, { what: "r/doesnotexist" }).catch((e) => e);
     expect(redir).toBeInstanceOf(RedirectError);
-  });
-});
-
-describe("user-token requests (write path)", () => {
-  it("uses the registered app + password grant and never the Android identity", async () => {
-    const { ctx, calls } = testContext(WRITE_ENV, (c) =>
-      c.url === "https://www.reddit.com/api/v1/access_token"
-        ? json({ access_token: "user-token-YYYYYYYY", expires_in: 3600 })
-        : json({ json: { errors: [], data: { things: [] } } }),
-    );
-    await ctx.client.user("/api/comment", { what: "reply", tool: "reply_to_post", method: "POST", form: { thing_id: "t3_abc", text: "hi" } });
-
-    const tok = calls[0]!;
-    expect(tok.method).toBe("POST");
-    expect(tok.headers.authorization).toBe(`Basic ${Buffer.from("myAppId123:myAppSecret456").toString("base64")}`);
-    expect(new URLSearchParams(tok.body).get("grant_type")).toBe("password");
-    expect(new URLSearchParams(tok.body).get("username")).toBe("botuser");
-    expect(tok.headers["user-agent"]).toBe("node:reddit-mcp:0.1.0 (by /u/botuser)");
-
-    const write = calls[1]!;
-    expect(write.url).toBe("https://oauth.reddit.com/api/comment?raw_json=1");
-    expect(write.headers.authorization).toBe("Bearer user-token-YYYYYYYY");
-    expect(new URLSearchParams(write.body).get("api_type")).toBe("json");
-    expect(new URLSearchParams(write.body).get("thing_id")).toBe("t3_abc");
-
-    for (const c of calls) {
-      expect(c.url).not.toContain("/auth/v2/oauth/access-token/loid");
-      expect(c.headers.authorization).not.toBe("Basic b2hYcG9xclpZdWIxa2c6");
-      expect(c.headers["user-agent"]).not.toMatch(/^Reddit\//);
-      expect(c.headers["client-vendor-id"]).toBeUndefined();
-      expect(c.headers["x-reddit-device-id"]).toBeUndefined();
-      expect(c.headers["x-reddit-loid"]).toBeUndefined();
-    }
-  });
-
-  it("refuses to use the Android client id with account credentials", async () => {
-    for (const env of [
-      { ...WRITE_ENV, REDDIT_CLIENT_ID: "ohXpoqrZYub1kg" },
-      // 覆盖了 REDDIT_MOBILE_CLIENT_ID 也不能绕过对默认 Android id 的拒绝
-      { ...WRITE_ENV, REDDIT_CLIENT_ID: "ohXpoqrZYub1kg", REDDIT_MOBILE_CLIENT_ID: "someOtherId" },
-      { ...WRITE_ENV, REDDIT_CLIENT_ID: "OHXPOQRZYUB1KG" },
-      { ...WRITE_ENV, REDDIT_CLIENT_ID: "customAndroidId", REDDIT_MOBILE_CLIENT_ID: "customAndroidId" },
-    ]) {
-      const { ctx, calls } = testContext(env, () => json({}));
-      const err: any = await ctx.client.user("/api/v1/me", { what: "me", tool: "get_me" }).catch((e) => e);
-      expect(String(err.message)).toContain("Refusing");
-      expect(calls).toHaveLength(0);
-      expect(ctx.userAuth.status().client_id_is_android_id).toBe(true);
-    }
   });
 });
 

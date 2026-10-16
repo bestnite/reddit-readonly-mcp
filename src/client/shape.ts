@@ -6,7 +6,6 @@ import type {
   RedditListing,
   RedditThing,
   TrimmedComment,
-  TrimmedFlair,
   TrimmedPost,
   TrimmedRule,
   TrimmedSubreddit,
@@ -159,20 +158,7 @@ export function trimRule(d: Raw): TrimmedRule {
   return r;
 }
 
-export function trimFlair(d: Raw): TrimmedFlair {
-  const f: TrimmedFlair = {
-    id: s(d.id),
-    text: s(d.text),
-    text_editable: b(d.text_editable),
-  };
-  if (b(d.mod_only)) f.mod_only = true;
-  if (typeof d.type === "string") f.type = d.type;
-  if (s(d.background_color)) f.background_color = s(d.background_color);
-  if (s(d.text_color)) f.text_color = s(d.text_color);
-  return f;
-}
-
-// 混合类型的 listing（搜索、overview、saved）按 kind 分派
+// 混合类型的 listing（搜索）按 kind 分派
 export function trimThing(t: RedditThing): TrimmedPost | TrimmedComment | TrimmedUser | TrimmedSubreddit | null {
   switch (t.kind) {
     case "t3":
@@ -245,18 +231,4 @@ export function buildCommentTree(children: RedditThing[], bodyMax: number = LIMI
   };
   const { comments } = walk(children);
   return { comments, more, total };
-}
-
-// /api/morechildren 返回扁平列表
-export function flattenMoreChildren(things: RedditThing[], bodyMax: number = LIMITS.commentBody): {
-  comments: TrimmedComment[];
-  more: MoreStub[];
-} {
-  const comments: TrimmedComment[] = [];
-  const more: MoreStub[] = [];
-  for (const t of things) {
-    if (t.kind === "t1") comments.push(trimComment(t.data, bodyMax));
-    else if (t.kind === "more") more.push(moreStub(t.data));
-  }
-  return { comments, more };
 }

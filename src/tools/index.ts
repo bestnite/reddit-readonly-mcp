@@ -18,20 +18,9 @@ import getSubredditInfo from "./read/get-subreddit-info.js";
 import getSubredditRules from "./read/get-subreddit-rules.js";
 import getTrendingSubreddits from "./read/get-trending-subreddits.js";
 import getPostComments from "./read/get-post-comments.js";
-import getMoreComments from "./read/get-more-comments.js";
-import getPostFlairs from "./read/get-post-flairs.js";
-import getMe from "./read/get-me.js";
-import getMyOverview from "./read/get-my-overview.js";
-import getMySaved from "./read/get-my-saved.js";
-import createPost from "./write/create-post.js";
-import replyToPost from "./write/reply-to-post.js";
-import editPost from "./write/edit-post.js";
-import editComment from "./write/edit-comment.js";
-import deletePost from "./write/delete-post.js";
-import deleteComment from "./write/delete-comment.js";
 import doctor from "./doctor.js";
 
-// 各工具 schema 各不相同，注册表只关心统一的外形
+// 各工具 schema 各不相同，注册表只关心统一的外形。服务器只读：这里只有读工具和 doctor
 export const ALL_TOOLS: ToolDef<any>[] = [
   getRedditPost,
   getTopPosts,
@@ -44,17 +33,6 @@ export const ALL_TOOLS: ToolDef<any>[] = [
   getSubredditRules,
   getTrendingSubreddits,
   getPostComments,
-  getMoreComments,
-  getPostFlairs,
-  getMe,
-  getMyOverview,
-  getMySaved,
-  createPost,
-  replyToPost,
-  editPost,
-  editComment,
-  deletePost,
-  deleteComment,
   doctor,
 ];
 

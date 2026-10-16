@@ -1,4 +1,4 @@
-// 诊断工具：报告读后端状态、限流、写操作就绪情况与缓存统计。从不输出任何凭据或 token。
+// 诊断工具：报告读后端状态、限流与缓存统计。从不输出任何 token、loid 或 session。
 
 import { DEFAULT_MOBILE_CLIENT_ID, PACKAGE_NAME, PACKAGE_VERSION } from "../config.js";
 import { toToolErrorText } from "../client/errors.js";
@@ -14,7 +14,6 @@ export default readTool("doctor", "Doctor (diagnostics)", {}, async (_args, ctx)
     tokenCheck = { ok: false, error: toToolErrorText(err) };
   }
   const read = ctx.tokens.status();
-  const write = ctx.userAuth.status();
   return {
     server: {
       name: PACKAGE_NAME,
@@ -33,13 +32,6 @@ export default readTool("doctor", "Doctor (diagnostics)", {}, async (_args, ctx)
           : undefined,
     },
     rss: ctx.rss.status(),
-    write: {
-      ready: write.configured && !write.client_id_is_android_id,
-      ...write,
-      note: "Write tools use only REDDIT_CLIENT_ID/SECRET + REDDIT_USERNAME/PASSWORD; the anonymous Android token is read-only by design.",
-    },
-    safe_mode: ctx.safeMode.status(),
-    bot_disclosure: ctx.disclosure.status(),
     cache: ctx.cache.stats(),
     requests: ctx.client.requestStats(),
     config: {

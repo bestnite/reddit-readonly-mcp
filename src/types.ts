@@ -47,7 +47,7 @@ export interface TrimmedComment {
   depth?: number;
   is_submitter?: boolean;
   stickied?: boolean;
-  // 该评论下被折叠、需要用 get_more_comments 展开的回复数量
+  // 该评论下被折叠的回复数量（本服务器无法展开：/api/morechildren 对匿名 token 返回 403）
   more_replies?: number;
   replies?: TrimmedComment[];
 }
@@ -55,7 +55,7 @@ export interface TrimmedComment {
 export interface MoreStub {
   parent_id: string;
   count: number;
-  // 可传给 get_more_comments 的评论 id
+  // 被折叠的评论 id（仅供参考，无法通过本服务器展开）
   children: string[];
   depth?: number;
   // "continue this thread" 类型的桩：children 为空，需要单独打开该评论的永久链接
@@ -106,16 +106,6 @@ export interface TrimmedRule {
   description: string;
   kind: string;
   violation_reason?: string;
-}
-
-export interface TrimmedFlair {
-  id: string;
-  text: string;
-  text_editable: boolean;
-  mod_only?: boolean;
-  type?: string;
-  background_color?: string;
-  text_color?: string;
 }
 
 // Reddit 原始结构（只声明用到的字段）

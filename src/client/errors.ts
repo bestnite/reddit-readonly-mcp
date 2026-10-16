@@ -118,21 +118,8 @@ export class RssModeActiveError extends RedditError {
   }
 }
 
-export class MissingCredentialsError extends RedditError {
-  constructor(
-    readonly tool: string,
-    readonly missing: string[],
-  ) {
-    super(`Missing write credentials for ${tool}: ${missing.join(", ")}`);
-  }
-  override toolText(): string {
-    return E.missingWriteCreds(this.tool, this.missing);
-  }
-}
-
-// 输入校验 / 安全模式拒绝等：message 本身就是给 agent 看的文本
+// 输入校验错误：message 本身就是给 agent 看的文本
 export class ToolInputError extends RedditError {}
-export class SafeModeError extends RedditError {}
 
 export function toToolErrorText(err: unknown): string {
   const text =

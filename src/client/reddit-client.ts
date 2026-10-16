@@ -83,7 +83,7 @@ export class RedditClient {
   private readonly timeoutMs: number;
   private readonly sleep: (ms: number) => Promise<void>;
   private readonly maxRetryWaitMs: number;
-  private stats = { requests: 0, retries429: 0, unauthorizedRetries: 0, errors: 0 };
+  private stats = { requests: 0, retries429: 0, rollovers429: 0, unauthorizedRetries: 0, errors: 0 };
 
   constructor(o: RedditClientOptions) {
     this.tokens = o.tokens;
@@ -112,9 +112,17 @@ export class RedditClient {
 
     let auth = await this.tokens.getReadAuth();
     if (auth.backend === "rss") throw new RssModeActiveError();
-    let res = await this.send(url, { method: "GET", headers: auth.headers }, (h) =>
-      this.tokens.noteRateLimit(h, auth.generation),
-    );
+    const first = auth;
+    // 第一次请求遇到 429 不在原地等待，而是先换一个新 token（新 token 有新的限流窗口）
+    let res = await this.send(url, { method: "GET", headers: first.headers }, (h) => this.tokens.noteRateLimit(h, first.generation), true);
+    if (res.status === 429) {
+      this.stats.rollovers429++;
+      this.tokens.requestRollover(first.generation);
+      auth = await this.tokens.getReadAuth();
+      if (auth.backend === "rss") throw new RssModeActiveError();
+      const next = auth;
+      res = await this.send(url, { method: "GET", headers: next.headers }, (h) => this.tokens.noteRateLimit(h, next.generation));
+    }
 
     if (res.status === 401) {
       // token 失效：刷新一次再重试
@@ -192,7 +200,8 @@ export class RedditClient {
     return json as T;
   }
 
-  private async send(url: string, init: RequestInit, onHeaders?: (h: Headers) => void): Promise<RawResult> {
+  // return429=true 时第一次 429 直接返回给调用方处理（用于匿名读的 token 轮换）
+  private async send(url: string, init: RequestInit, onHeaders?: (h: Headers) => void, return429 = false): Promise<RawResult> {
     for (let attempt = 0; ; attempt++) {
       this.stats.requests++;
       let res: Response;
@@ -210,7 +219,7 @@ export class RedditClient {
         throw normalizeFetchError(err, this.timeoutMs);
       }
 
-      if (res.status !== 429) return { status: res.status, headers: res.headers, text };
+      if (res.status !== 429 || (return429 && attempt === 0)) return { status: res.status, headers: res.headers, text };
 
       const waitMs = retryAfterMs(res.headers, attempt);
       if (attempt >= this.maxRetries || waitMs > this.maxRetryWaitMs) {

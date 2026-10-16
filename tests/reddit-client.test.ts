@@ -68,17 +68,24 @@ describe("anonymous read requests", () => {
     expect(calls.filter((c) => !isTokenUrl(c.url))).toHaveLength(2);
   });
 
-  it("retries 429 honouring Retry-After, then succeeds", async () => {
+  it("on a first 429 rolls over to a fresh token, then backs off honouring Retry-After", async () => {
     const sleeps: number[] = [];
     let api = 0;
-    const { ctx } = testContext({}, (c) => {
-      if (isTokenUrl(c.url)) return tokenResponse();
+    let tokens = 0;
+    const { ctx, calls } = testContext({}, (c) => {
+      if (isTokenUrl(c.url)) return tokenResponse(`tok-${++tokens}-xxxxxxxx`);
       return ++api < 3 ? text("slow down", 429, { "retry-after": "2" }) : json(listing([]));
     });
     (ctx.client as any).sleep = async (ms: number) => void sleeps.push(ms);
     await ctx.client.read("/r/a/hot", {}, { what: "a" });
-    expect(sleeps).toEqual([2000, 2000]);
-    expect(ctx.client.requestStats().retries429).toBe(2);
+    expect(tokens).toBe(2);
+    expect(calls.filter((c) => !isTokenUrl(c.url)).map((c) => c.headers.authorization)).toEqual([
+      "Bearer tok-1-xxxxxxxx",
+      "Bearer tok-2-xxxxxxxx",
+      "Bearer tok-2-xxxxxxxx",
+    ]);
+    expect(sleeps).toEqual([2000]);
+    expect(ctx.client.requestStats()).toMatchObject({ rollovers429: 1, retries429: 1 });
   });
 
   it("raises RateLimitError once REDDIT_MAX_RETRIES is exhausted", async () => {
@@ -87,7 +94,8 @@ describe("anonymous read requests", () => {
     );
     const err = await ctx.client.read("/r/a/hot", {}, { what: "a" }).catch((e) => e);
     expect(err).toBeInstanceOf(RateLimitError);
-    expect(calls.filter((c) => !isTokenUrl(c.url))).toHaveLength(2);
+    // 1 次原 token + 轮换后 1 次 + 1 次重试
+    expect(calls.filter((c) => !isTokenUrl(c.url))).toHaveLength(3);
   });
 
   it("serves repeated reads from the cache and respects REDDIT_CACHE=off", async () => {
@@ -154,10 +162,19 @@ describe("user-token requests (write path)", () => {
   });
 
   it("refuses to use the Android client id with account credentials", async () => {
-    const { ctx, calls } = testContext({ ...WRITE_ENV, REDDIT_CLIENT_ID: "ohXpoqrZYub1kg" }, () => json({}));
-    const err: any = await ctx.client.user("/api/v1/me", { what: "me", tool: "get_me" }).catch((e) => e);
-    expect(String(err.message)).toContain("Refusing");
-    expect(calls).toHaveLength(0);
+    for (const env of [
+      { ...WRITE_ENV, REDDIT_CLIENT_ID: "ohXpoqrZYub1kg" },
+      // 覆盖了 REDDIT_MOBILE_CLIENT_ID 也不能绕过对默认 Android id 的拒绝
+      { ...WRITE_ENV, REDDIT_CLIENT_ID: "ohXpoqrZYub1kg", REDDIT_MOBILE_CLIENT_ID: "someOtherId" },
+      { ...WRITE_ENV, REDDIT_CLIENT_ID: "OHXPOQRZYUB1KG" },
+      { ...WRITE_ENV, REDDIT_CLIENT_ID: "customAndroidId", REDDIT_MOBILE_CLIENT_ID: "customAndroidId" },
+    ]) {
+      const { ctx, calls } = testContext(env, () => json({}));
+      const err: any = await ctx.client.user("/api/v1/me", { what: "me", tool: "get_me" }).catch((e) => e);
+      expect(String(err.message)).toContain("Refusing");
+      expect(calls).toHaveLength(0);
+      expect(ctx.userAuth.status().client_id_is_android_id).toBe(true);
+    }
   });
 });
 
